@@ -16,9 +16,15 @@ class SaveWorkMeta {
   }
 
   // Save the id of the work that has downloaded the metadata
+<<<<<<< HEAD
 
   private savedIds: string[] = []
 
+=======
+
+  private savedIds: number[] = []
+
+>>>>>>> 12b527125098dd024769af44e4a825d5c926ffd1
   private readonly CRLF = '\n' // Line breaks used in txt files
 
   private bindEvents() {
@@ -32,7 +38,11 @@ class SaveWorkMeta {
     window.addEventListener(EVT.list.skipDownload, (ev: CustomEventInit) => {
       const skipData = ev.detail.data as DonwloadSkipData
       if (skipData.reason === 'duplicate') {
+<<<<<<< HEAD
         this.saveMeta(skipData.id)
+=======
+        this.saveMeta(Number.parseInt(skipData.id))
+>>>>>>> 12b527125098dd024769af44e4a825d5c926ffd1
       }
     })
 
@@ -107,8 +117,11 @@ class SaveWorkMeta {
       this.CRLF +
       '<digiKam:TagsList>' +
       this.CRLF +
+<<<<<<< HEAD
       '<rdf:Seq>' +
       this.CRLF +
+=======
+>>>>>>> 12b527125098dd024769af44e4a825d5c926ffd1
       value +
       this.CRLF +
       '</rdf:Seq>' +
@@ -162,7 +175,11 @@ class SaveWorkMeta {
     }
   }
 
+<<<<<<< HEAD
   private saveMeta(id: string) {
+=======
+  private saveMeta(id: number) {
+>>>>>>> 12b527125098dd024769af44e4a825d5c926ffd1
     // If all types of works do not need to save metadata
 
     if (
@@ -251,7 +268,11 @@ class SaveWorkMeta {
     // Take out the part before the suffix name
 
     // const index = _fileName.lastIndexOf('.')
+<<<<<<< HEAD
     let part1 = _fileName.replace(data.id, id)
+=======
+    // let part1 = _fileName.substring(0, index)
+>>>>>>> 12b527125098dd024769af44e4a825d5c926ffd1
 
     // if (!settings.zeroPadding) {
     //   // Swap the id string with a number id, which is to remove the possible sequence numbers after id, such as p0
@@ -261,8 +282,13 @@ class SaveWorkMeta {
     // }
     // // Splice out the file name of the metadata file
 
+<<<<<<< HEAD
     const metaFileName = `${part1}.xmp`
     // const metaFileName = `${_fileName}.xmp`
+=======
+    // const metaFileName = `${part1}.xmp`
+    const metaFileName = `${_fileName}.xmp`
+>>>>>>> 12b527125098dd024769af44e4a825d5c926ffd1
 
     // Send a download request
     // Because I'm lazy, the background will not return to the download status, and the default is successful download
