@@ -1,4 +1,5 @@
-// Download the file and send it to the browser for saving
+// 下载文件，然后发送给浏览器进行保存
+import browser from 'webextension-polyfill'
 import { EVT } from '../EVT'
 import { log } from '../Log'
 import { lang } from '../Lang'
@@ -70,16 +71,11 @@ class Download {
     const duplicate = await downloadRecord.checkDeduplication(arg.result)
     if (duplicate) {
       await downloadInterval.wait()
-      return this.skipDownload(
-        {
-          id: arg.id,
-          reason: 'duplicate',
-        },
-        lang.transl(
-          '_跳过下载因为',
-          Tools.createWorkLink(arg.id, arg.result.type !== 3)
-        ) + lang.transl('_不下载重复文件')
-      )
+      return this.skipDownload({
+        id: arg.id,
+        type: arg.result.type,
+        reason: 'duplicate',
+      })
     }
 
     // If it is an animation, check again whether the animation is excluded.
@@ -357,15 +353,15 @@ class Download {
         return
       }
 
-      // Generate download link
-      const blobUrl = URL.createObjectURL(file)
+      // 生成下载链接
+      const blobURL = URL.createObjectURL(file)
 
       // Color checks on illustrations and comics
       // The main reason for checking here: when grabbing, you will only check the color of the single-image work, and you will not check the color of the multi-image work. Therefore, multi-picture works need to be inspected here.
       // Another reason: If the color condition of the image is not set during crawling and the color condition is set during downloading, then it must be checked here.
       if (arg.result.type === 0 || arg.result.type === 1) {
         const result = await filter.check({
-          mini: blobUrl,
+          mini: blobURL,
         })
         if (!result) {
           return this.skipDownload(
@@ -382,7 +378,7 @@ class Download {
       if (settings.setFileDownloadOrder) {
         await this.waitPreviousFileDownload()
       }
-      this.browserDownload(blobUrl, _fileName, arg.id, arg.taskBatch)
+      this.browserDownload(file, blobURL, _fileName, arg.id, arg.taskBatch)
       xhr = null as any
       file = null as any
     })
@@ -413,30 +409,38 @@ class Download {
     })
   }
 
-  // Send download tasks to the browser
-  private browserDownload(
-    blobUrl: string,
+  // 向浏览器发送下载任务
+  private async browserDownload(
+    blob: Blob,
+    blobURL: string,
     fileName: string,
     id: string,
     taskBatch: number
   ) {
     // If the task has been stopped, the download task will not be sent to the browser.
     if (this.cancel) {
-      // Release bloburl
-      URL.revokeObjectURL(blobUrl)
+      // 释放 blob URL
+      URL.revokeObjectURL(blobURL)
       return
+    }
+
+    let dataURL: string | undefined = undefined
+    if (Config.sendDataURL) {
+      dataURL = await Utils.blobToDataURL(blob)
     }
 
     const sendData: SendToBackEndData = {
       msg: 'save_work_file',
-      fileUrl: blobUrl,
       fileName: fileName,
       id,
       taskBatch,
+      blobURL,
+      blob: Config.sendBlob ? blob : undefined,
+      dataURL,
     }
 
     try {
-      chrome.runtime.sendMessage(sendData)
+      browser.runtime.sendMessage(sendData)
       EVT.fire('sendBrowserDownload')
     } catch (error) {
       let msg = `${lang.transl('_发生错误原因')}<br>{}${lang.transl(

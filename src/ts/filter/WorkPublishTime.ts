@@ -2,9 +2,9 @@ import { API } from '../API'
 import { secretSignal } from '../utils/SecretSignal'
 import { Utils } from '../utils/Utils'
 import { illustsData } from '../store/WorkPublishTimeIllusts'
-import { novelData as novelsData } from '../store/WorkPublishTimeNovels'
+import { novelsData } from '../store/WorkPublishTimeNovels'
 
-// 获取指定 id 的发布时间范围
+// 每隔 10000 个作品，获取一次发布时间
 class WorkPublishTime {
   constructor() {
     this.illustsLength = illustsData.length
@@ -61,14 +61,14 @@ class WorkPublishTime {
   private bindEvents() {
     // 获取图像作品的数据
     secretSignal.register('ppdtask1', () => {
-      // 上次记录到 131220000
-      this.crawlData(130600000, 131229053)
+      // 上次记录到 133930000
+      this.crawlData(133280001, 133931259)
     })
 
     // 获取小说作品的数据
     secretSignal.register('ppdtask2', () => {
-      // 上次记录到 24970000
-      this.crawlData(24830000, 24972432, 'novels')
+      // 上次记录到 25600000
+      this.crawlData(25450000, 25606591, 'novels')
     })
   }
 

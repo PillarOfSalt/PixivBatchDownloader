@@ -1,4 +1,4 @@
-// 下载控制
+import browser from 'webextension-polyfill'
 import { EVT } from '../EVT'
 import { Tools } from '../Tools'
 import {
@@ -18,6 +18,7 @@ import { progressBar } from './ProgressBar'
 import { downloadStates } from './DownloadStates'
 import { ShowDownloadStates } from './ShowDownloadStates'
 import { ShowSkipCount } from './ShowSkipCount'
+import './ShowDuplicateLog'
 import { ShowConvertCount } from './ShowConvertCount'
 import { BookmarkAfterDL } from './BookmarkAfterDL'
 import { states } from '../store/States'
@@ -96,6 +97,11 @@ class DownloadControl {
 
   private readonly msgFlag = 'uuidTip'
 
+  // 类型守卫
+  private isDownloadedMsg(msg: any): msg is DownloadedMsg {
+    return !!msg.msg
+  }
+
   private bindEvents() {
     window.addEventListener(EVT.list.crawlStart, () => {
       this.hideResultBtns()
@@ -159,20 +165,23 @@ class DownloadControl {
     })
 
     // 监听浏览器返回的消息
-    chrome.runtime.onMessage.addListener((msg: DownloadedMsg) => {
+    browser.runtime.onMessage.addListener((msg: any) => {
       if (!this.taskBatch) {
+        return
+      }
+
+      if (!this.isDownloadedMsg(msg)) {
         return
       }
 
       // UUID 的情况
       if (msg.data?.uuid) {
-        log.error(lang.transl('_uuid'), 1, false, 'filenameUUID')
-        msgBox.once(this.msgFlag, lang.transl('_uuid'), 'error')
+        log.log(lang.transl('_uuid'), 1, false, 'filenameUUID')
+        msgBox.once(this.msgFlag, lang.transl('_uuid'), 'show')
       }
 
       // 文件下载成功
       if (msg.msg === 'downloaded') {
-        // 释放 BLOBURL
         URL.revokeObjectURL(msg.data.url)
 
         // 发送下载成功的事件
@@ -226,7 +235,7 @@ class DownloadControl {
         })
 
         // 通知后台清除保存的此标签页的 idList
-        chrome.runtime.sendMessage({
+        browser.runtime.sendMessage({
           msg: 'clearDownloadsTempData',
         })
       } else {
@@ -243,10 +252,10 @@ class DownloadControl {
   private createDownloadArea() {
     const html = `<div class="download_area">
     <div class="centerWrap_btns">
-    <button class="startDownload" type="button" style="background:${Colors.bgBlue};" data-xztext="_开始下载"></button>
-    <button class="pauseDownload" type="button" style="background:${Colors.bgYellow};" data-xztext="_暂停下载"></button>
-    <button class="stopDownload" type="button" style="background:${Colors.bgRed};" data-xztext="_停止下载"></button>
-    <button class="copyUrl" type="button" style="background:${Colors.bgGreen};" data-xztext="_复制url"></button>
+    <button class="startDownload hasRippleAnimation" type="button" style="background:${Colors.bgBlue};"><span data-xztext="_开始下载"></span><span class="ripple"></span></button>
+    <button class="pauseDownload hasRippleAnimation" type="button" style="background:${Colors.bgYellow};"><span data-xztext="_暂停下载"></span><span class="ripple"></span></button>
+    <button class="stopDownload hasRippleAnimation" type="button" style="background:${Colors.bgRed};"><span data-xztext="_停止下载"></span><span class="ripple"></span></button>
+    <button class="copyUrl hasRippleAnimation" type="button" style="background:${Colors.bgGreen};"><span data-xztext="_复制url"></span><span class="ripple"></span></button>
     </div>
     <div class="download_status_text_wrap">
     <span data-xztext="_当前状态"></span>
@@ -338,7 +347,17 @@ class DownloadControl {
       this.resultBtns.exportCSV.addEventListener(
         'mouseenter',
         () => {
-          showHelp.show('tipCSV', lang.transl('_导出CSV文件的提示'))
+          // 鼠标在这个按钮上停留 500 ms 之后，显示提示
+          let timer: number
+          this.resultBtns.exportCSV.addEventListener('mouseleave', () => {
+            window.clearTimeout(timer)
+          })
+          timer = window.setTimeout(() => {
+            msgBox.show(lang.transl('_导出CSV文件的提示'), {
+              title: lang.transl('_导出csv'),
+            })
+            showHelp.show('tipCSV', lang.transl('_导出CSV文件的提示'))
+          }, 500)
         },
         false
       )
@@ -435,7 +454,7 @@ class DownloadControl {
     log.success(lang.transl('_正在下载中'))
 
     if (Config.mobile) {
-      log.warning(lang.transl('_Kiwi浏览器可能不能建立文件夹的bug'))
+      log.warning(lang.transl('_移动端浏览器可能不会建立文件夹的说明'))
     }
   }
 
