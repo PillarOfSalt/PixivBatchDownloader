@@ -7,6 +7,8 @@ import { Result } from '../store/StoreType'
 import { settings } from '../setting/Settings'
 import { Utils } from '../utils/Utils'
 import { Tools } from '../Tools'
+import { log } from '../Log'
+import { loading } from '../Loading'
 
 // Create a txt file for each work to save the metadata of this work
 
@@ -253,13 +255,20 @@ class SaveWorkMeta {
     // const index = _fileName.lastIndexOf('.')
     let part1 = _fileName.replace(data.id, id)
 
-    // if (!settings.zeroPadding) {
-    //   // Swap the id string with a number id, which is to remove the possible sequence numbers after id, such as p0
-    //   // However, if the user enables 0 in front of the sequence number, the id will not be replaced, because the id in the file name may have multiple 0s followed by p000. If you replace it with idNum, the next two 0s cannot be replaced.
+    if (settings.zeroPadding) {
+      // Swap the id string with a number id, which is to remove the possible sequence numbers after id, such as p0
+      // However, if the user enables 0 in front of the sequence number, the id will not be replaced, because the id in the file name may have multiple 0s followed by p000. If you replace it with idNum, the next two 0s cannot be replaced.
+      const index = id.lastIndexOf('p')
+      const num = id.substring(index + 1)
+      part1 = _fileName.replace(
+        /p\d+\./,
+        `p${num.padStart(settings.zeroPaddingLength, '0')}.`
+      )
+      log.log(`part1: ${part1}`)
 
-    //   part1 = part1.replace(data.id, data.idNum.toString())
-    // }
-    // // Splice out the file name of the metadata file
+      // part1 = part1.replace(data.id, data.idNum.toString())
+    }
+    // Splice out the file name of the metadata file
 
     const metaFileName = `${part1}.xmp`
     // const metaFileName = `${_fileName}.xmp`
