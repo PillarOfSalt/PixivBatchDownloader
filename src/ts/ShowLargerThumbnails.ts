@@ -1,8 +1,10 @@
+import browser from 'webextension-polyfill'
 import { Config } from './Config'
 import { EVT } from './EVT'
 import { pageType } from './PageType'
 import { settings } from './setting/Settings'
 import { Tools } from './Tools'
+import { Utils } from './utils/Utils'
 
 class ShowLargerThumbnails {
   constructor() {
@@ -23,7 +25,7 @@ class ShowLargerThumbnails {
 
   private async loadCssText() {
     const css = await fetch(
-      chrome.runtime.getURL('style/showLargerThumbnails.css')
+      browser.runtime.getURL('style/showLargerThumbnails.css')
     )
     this.css = await css.text()
     this.setCss()
@@ -46,11 +48,11 @@ class ShowLargerThumbnails {
     // 当页面元素变化时，允许重新查找。
     // 这主要是因为切换页面时，下载器可能先查找到了目标元素，但之后页面内容马上发生了变化，移除了目标元素。
     // 所以当元素变化时，需要重新查找，否则偶尔会显示异常
-    const targetNode = document.querySelector('body')!
+    const body = document.querySelector('body')!
     const observer = new MutationObserver(() => {
       this.needFind = true
     })
-    observer.observe(targetNode, {
+    observer.observe(body, {
       childList: true,
       subtree: true,
     })
@@ -77,10 +79,8 @@ class ShowLargerThumbnails {
       return
     }
 
-    const el = document.createElement('style')
+    const el = Utils.addStyle(this.css)
     el.id = this.styleId
-    el.innerHTML = this.css
-    document.body.append(el)
   }
 
   private removeStyle() {
@@ -165,6 +165,20 @@ class ShowLargerThumbnails {
               iframe.remove()
             }
           })
+        }
+      }
+    }
+
+    // artwork 页面
+    if (pageType.type === pageType.list.Artwork) {
+      // 查找底部的 相关作品 或 推荐作品（有些作品的底部是相关作品，有的是推荐作品，我不清楚是什么规律）
+      const ul = document.querySelectorAll('aside ul')
+      if (ul.length > 0) {
+        const useUL = ul[ul.length - 1]
+        const div = useUL.closest('div')
+        if (div) {
+          div.classList.add('width94vw')
+          this.needFind = false
         }
       }
     }
@@ -295,6 +309,45 @@ class ShowLargerThumbnails {
           const ul = work.closest('ul')
           ul?.classList.add('worksUL')
           this.needFind = false
+        }
+      }
+    }
+
+    // 约稿页面，分为数种子页面
+    if (pageType.type === pageType.list.Request) {
+      // 正在接稿中用户的作品
+      // https://www.pixiv.net/request/creators/works/illust
+      // 已完成的约稿页面
+      // https://www.pixiv.net/request/complete/illust
+      if (
+        window.location.pathname.includes('/request/complete') ||
+        window.location.pathname.includes('/request/creators')
+      ) {
+        // 首先查找作品列表的 UL 元素
+        const illustLink = document.querySelector('ul li a[href^="/artworks/"]')
+        if (!illustLink) {
+          return
+        }
+
+        const ul = illustLink.closest('ul')!
+        ul.classList.add('worksUL')
+
+        // 查找容器元素
+        // ul 的祖父元素是个 div，这个 div 里面的 3 个div 都是容器元素
+        const grandfather = ul.parentElement!.parentElement!
+        grandfather.childNodes.forEach((div) =>
+          (div as HTMLDivElement).classList.add('worksWrapper')
+        )
+
+        this.needFind = false
+      } else {
+        // 约稿页面
+        // 为作品容器添加自定义 className
+        const allSection = document.querySelectorAll('section')
+        for (const section of allSection) {
+          if (section.parentElement?.nodeName == 'DIV') {
+            section.parentElement.classList.add('requestContainer')
+          }
         }
       }
     }

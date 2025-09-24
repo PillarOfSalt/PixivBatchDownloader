@@ -28,6 +28,7 @@
 // 但是持久化保存的数据只有一份：最后一次的设置变化是在哪个页面发生的，就保存哪个页面的 settings 数据。
 // 所以当页面刷新时，或者打开新的页面时，会加载设置最后一次发生变化的页面里的 settings 数据
 
+import browser from 'webextension-polyfill'
 import { EVT } from '../EVT'
 import { Utils } from '../utils/Utils'
 import { convertOldSettings } from './ConvertOldSettings'
@@ -60,6 +61,7 @@ export interface SettingChangeData {
 
 interface XzSetting {
   setWantPage: number
+  /** wantPageArr 是从 pageType 0 开始的，也就是没有 Unsupported 页面类型里的值 */
   wantPageArr: number[]
   firstFewImagesSwitch: boolean
   firstFewImages: number
@@ -285,8 +287,8 @@ class Settings {
   private readonly defaultSettings: XzSetting = {
     setWantPage: -1,
     wantPageArr: [
-      -1, -1, -1, -1, -1, 1000, -1, 500, -1, 1000, 100, -1, 100, -1, -1, 1000,
-      100, 100, 100, 100, -1,
+      -1, -1, -1, 1, 1, 1, 50, 100, -1, 100, 100, -1, 100, -1, -1, 1, 100, 100,
+      100, 100, 1,
     ],
     firstFewImagesSwitch: false,
     firstFewImages: 1,
@@ -310,16 +312,16 @@ class Settings {
     needTag: [],
     notNeedTag: [],
     autoStartDownload: true,
-    downloadThread: 5,
-    userSetName: '{page_title}/{id}',
+    downloadThread: 3,
+    userSetName: 'pixiv/{user}-{user_id}/{id}-{title}',
     namingRuleList: [],
     workDir: false,
     workDirFileNumber: 1,
     workDirNameRule: '{id_num}',
     showOptions: true,
     postDate: false,
-    postDateStart: 946684800000,
-    postDateEnd: 4102444800000,
+    postDateStart: 1230739200000,
+    postDateEnd: 1893427200000,
     previewResult: true,
     previewResultLimit: 3000,
     BMKNumSwitch: false,
@@ -362,7 +364,7 @@ class Settings {
     restrict: 'no',
     widthTagBoolean: true,
     restrictBoolean: false,
-    userBlockList: true,
+    userBlockList: false,
     removeBlockedUsersWork: true,
     blockList: [],
     theme: 'auto',
@@ -398,29 +400,29 @@ class Settings {
     saveMetaType3: false,
     setNameRuleForEachPageType: false,
     nameRuleForEachPageType: {
-      '-1': '{page_title}/{id}',
-      '0': '{page_title}/{id}',
-      '1': '{page_title}/{id}',
-      '2': '{user}/{id}',
-      '3': '{page_title}/{id}',
-      '4': '{page_title}/{id}',
-      '5': '{page_tag}/{id}',
-      '6': '{page_title}/{id}',
-      '7': '{page_title}/{rank}-{id}',
-      '8': '{page_title}/{id}',
-      '9': '{page_title}/{id}',
-      '10': '{page_title}/{id}',
-      '11': '{page_title}/{id}',
-      '12': '{page_title}/{id}',
-      '13': '{page_title}/{id}-{title}',
-      '14': '{user}/{series_title}/{series_order} {title} {id}',
-      '15': '{page_tag}/{id}-{title}',
-      '16': '{page_title}/{rank}-{id}-{title}',
-      '17': '{page_title}/{id}-{title}',
-      '18': '{page_title}/{id}-{title}',
-      '19': '{user}/{series_title}/{series_order} {title} {id}',
-      '20': '{page_title}/{id}',
-      '21': '{page_title}/{id}-{title}',
+      '-1': 'pixiv/{user}-{user_id}/{id}-{title}',
+      '0': 'pixiv/{user}-{user_id}/{id}-{title}',
+      '1': 'pixiv/{user}-{user_id}/{id}-{title}',
+      '2': 'pixiv/{user}-{user_id}/{id}-{title}',
+      '3': 'pixiv/{page_tag}/{user}-{user_id}/{id}-{title}',
+      '4': 'pixiv/{page_tag}/{user}-{user_id}/{id}-{title}',
+      '5': 'pixiv/{page_tag}/{user}-{user_id}/{id}-{title}',
+      '6': 'pixiv/{user}-{user_id}/{id}-{title}',
+      '7': 'pixiv/{page_title}/{rank}-{id}-{title}',
+      '8': 'pixiv/{user}-{user_id}/{id}-{title}',
+      '9': 'pixiv/{user}-{user_id}/{id}-{title}',
+      '10': 'pixiv/{user}-{user_id}/{id}-{title}',
+      '11': 'pixiv/{user}-{user_id}/{id}-{title}',
+      '12': 'pixiv/{user}-{user_id}/{id}-{title}',
+      '13': 'pixiv/{user}-{user_id}/{id}-{title}',
+      '14': 'pixiv/{user}-{user_id}/{series_title}/{series_order}-{title}-{id}',
+      '15': 'pixiv/{page_tag}/{user}-{user_id}/{id}-{title}',
+      '16': 'pixiv/{page_title}/{rank}-{id}-{title}',
+      '17': 'pixiv/{user}-{user_id}/{id}-{title}',
+      '18': 'pixiv/{user}-{user_id}/{id}-{title}',
+      '19': 'pixiv/{user}-{user_id}/{series_title}/{series_order}-{title}-{id}',
+      '20': 'pixiv/{user}-{user_id}/{id}-{title}',
+      '21': 'pixiv/{user}-{user_id}/{id}-{title}',
     },
     showAdvancedSettings: false,
     showNotificationAfterDownloadComplete: false,
@@ -491,7 +493,7 @@ class Settings {
     removeWorksOfFollowedUsersOnSearchPage: false,
     tipExportAndImportBookmark: true,
     saveWorkDescription: false,
-    saveEachDescription: false,
+    saveEachDescription: true,
     summarizeDescription: false,
     slowCrawlDealy: 1600,
     downloadInterval: 0,
@@ -581,10 +583,10 @@ class Settings {
   // 读取恢复设置
   private restore() {
     let restoreData = this.defaultSettings
-    // 首先从 chrome.storage 获取配置（从 11.5.0 版本开始）
-    chrome.storage.local.get(Config.settingStoreName, (result) => {
+    // 首先从 browser.storage 获取配置
+    browser.storage.local.get(Config.settingStoreName).then((result) => {
       if (result[Config.settingStoreName]) {
-        restoreData = result[Config.settingStoreName]
+        restoreData = result[Config.settingStoreName] as XzSetting
       } else {
         // 如无数据则尝试从 localStorage 获取配置，因为旧版本的配置储存在 localStorage 中
         const savedSettings = localStorage.getItem(Config.settingStoreName)
@@ -598,16 +600,16 @@ class Settings {
   }
 
   private store = Utils.debounce(() => {
-    // chrome.storage.local 的储存上限是 5 MiB（5242880 Byte）
-    chrome.storage.local.set({
+    // browser.storage.local 的储存上限是 5 MiB（5242880 Byte）
+    browser.storage.local.set({
       [Config.settingStoreName]: this.settings,
     })
   }, 50)
 
   // 接收整个设置项，通过循环将其更新到 settings 上
   // 循环设置而不是整个替换的原因：
-  // 1. 进行类型转换，如某些设置项是 number ，但是数据来源里是 string，setSetting 可以把它们转换到正确的类型
-  // 2. 某些选项在旧版本里没有，所以不能用旧的设置整个覆盖
+  // 1. 进行类型转换，如某些设置项是 number，但是数据来源里是 string，setSetting 可以把它们转换到正确的类型
+  // 2. 某些选项在旧版本里没有，所以不能用旧的设置覆盖新的设置
   private assignSettings(data: XzSetting) {
     const origin = Utils.deepCopy(data)
     for (const [key, value] of Object.entries(origin)) {

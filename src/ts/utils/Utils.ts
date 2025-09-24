@@ -249,9 +249,10 @@ class Utils {
 
   // 动态添加 css 样式
   static addStyle(css: string) {
-    const e = document.createElement('style')
-    e.innerHTML = css
-    document.body.append(e)
+    const el = document.createElement('style')
+    el.innerHTML = css
+    document.body.append(el)
+    return el
   }
 
   // 加载一个图片，当 onload 事件发生之后返回 img 元素
@@ -474,6 +475,57 @@ class Utils {
     url = url.split('?')[0] // 移除可能存在的查询字符串
     const array = url.split('.')
     return array[array.length - 1]
+  }
+
+  /**检测元素在视口中是否可见
+   * threshold 为 0 时，只要有部分可见就返回 true
+   * threshold 为 1 时，需要全部可见才会返回 true
+   */
+  static observeElement(el: HTMLElement, callback: Function, threshold: 0 | 1) {
+    const observer = new IntersectionObserver(
+      (entries, observer) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            callback(true) // 元素进入视口
+          } else {
+            callback(false) // 元素不在视口
+          }
+        })
+      },
+      {
+        root: null, // 默认使用视口作为根
+        threshold: threshold,
+        // threshold 是一个阈值，如果为 0, 那么元素只要有一部分进入视口就触发
+        // 如果为 1, 则需要元素完全可见才会触发
+      }
+    )
+
+    observer.observe(el)
+  }
+
+  // 在 Firefox 浏览器里，需要把 response.arrayBuffer 通过 new ArrayBuffer 来复制一份，以通过类型检查
+  // 因为 Firefox 把 response.arrayBuffer 视为一个非标准的 ArrayBuffer，尽管它在功能上是等价的。
+  // 这会导致 buffer instanceof ArrayBuffer 和 ArrayBuffer.isView(buffer) 在 Firefox 上为 false
+  // 因此需要使用 new ArrayBuffer 来复制为标准的 ArrayBuffer，以通过类型检查
+  // 注：这个问题同样存在于 response.blob 上
+  static copyArrayBuffer(arrayBuffer: ArrayBuffer) {
+    const newBuffer = new ArrayBuffer(arrayBuffer.byteLength)
+    new Uint8Array(newBuffer).set(new Uint8Array(arrayBuffer))
+    arrayBuffer = null as any
+    return newBuffer
+  }
+
+  static blobToDataURL(blob: Blob) {
+    return new Promise<string>((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = function () {
+        resolve(this.result as string)
+      }
+      reader.onerror = function () {
+        reject(new Error('Failed to convert blob to DataURL'))
+      }
+      reader.readAsDataURL(blob)
+    })
   }
 }
 
