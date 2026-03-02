@@ -69,7 +69,6 @@ class Download {
     // Check if it is a duplicate file
     const duplicate = await downloadRecord.checkDeduplication(arg.result)
     if (duplicate) {
-      await downloadInterval.wait()
       return this.skipDownload({
         id: arg.id,
         type: arg.result.type,
