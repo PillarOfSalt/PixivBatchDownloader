@@ -1,15 +1,14 @@
+import browser from 'webextension-polyfill'
 import { EVT } from '../EVT'
 import { store } from '../store/Store'
-import { DonwloadSuccessData } from './DownloadType'
+import { DonwloadSuccessData, SendToBackEndData } from './DownloadType'
 import { DonwloadSkipData } from './DownloadType'
 import { fileName } from '../FileName'
 import { Result } from '../store/StoreType'
 import { settings } from '../setting/Settings'
 import { Utils } from '../utils/Utils'
 import { Tools } from '../Tools'
-import { loading } from '../Loading'
-
-// Create a txt file for each work to save the metadata of this work
+import { Config } from '../Config'
 
 class SaveWorkMeta {
   constructor() {
@@ -163,9 +162,8 @@ class SaveWorkMeta {
     }
   }
 
-  private saveMeta(id: string) {
-    // If all types of works do not need to save metadata
-
+  private async saveMeta(id: string) {
+    // 如果所有类型的作品都不需要保存元数据
     if (
       !settings.saveMetaType0 &&
       !settings.saveMetaType1 &&
@@ -271,14 +269,24 @@ class SaveWorkMeta {
     const metaFileName = `${part1}.xmp`
     // const metaFileName = `${_fileName}.xmp`
 
-    // Send a download request
-    // Because I'm lazy, the background will not return to the download status, and the default is successful download
+    // 发送下载请求
 
-    chrome.runtime.sendMessage({
+    let dataURL: string | undefined = undefined
+    if (Config.sendDataURL) {
+      dataURL = await Utils.blobToDataURL(blob)
+    }
+
+    // 不检查下载状态，默认下载成功
+    const sendData: SendToBackEndData = {
       msg: 'save_description_file',
-      fileUrl: URL.createObjectURL(blob),
       fileName: metaFileName,
-    })
+      id: 'fake',
+      taskBatch: -1,
+      blobURL: URL.createObjectURL(blob),
+      blob: Config.sendBlob ? blob : undefined,
+      dataURL,
+    }
+    browser.runtime.sendMessage(sendData)
 
     this.savedIds.push(id)
   }

@@ -39,7 +39,7 @@ abstract class InitPageBase {
 
   protected listPageFinished = 0 // 记录一共抓取了多少个列表页
 
-  protected readonly ajaxThreadsDefault = 10 // 抓取作品数据时的并发请求数量默认值，也是最大值
+  protected readonly ajaxThreadsDefault = 3 // 抓取作品数据时的并发请求数量默认值，也是最大值
 
   protected ajaxThread = this.ajaxThreadsDefault // 抓取时的并发请求数
 
@@ -58,6 +58,24 @@ abstract class InitPageBase {
 
     // 注册当前页面的 destroy 函数
     destroyManager.register(this.destroy.bind(this))
+
+    EVT.bindOnce(
+      'setSlowCrawlMode',
+      EVT.list.settingChange,
+      (ev: CustomEventInit) => {
+        const data = ev.detail.data as any
+        if (data.name === 'slowCrawl' && data.value) {
+          if (store.idList.length > settings.slowCrawlOnWorksNumber) {
+            // 当用户打开慢速抓取开关时，设置慢速抓取的标记
+            log.warning(lang.transl('_慢速抓取'))
+            states.slowCrawlMode = true
+            this.ajaxThread = 1
+            // 其实在已经出现 429 错误后，用户才启用这个开关的话是没用的，
+            // 因为下载器重试请求的时候，已经有多个出错的请求了，下载器没有把这些请求从并发改为单线程
+          }
+        }
+      }
+    )
 
     // 页面切换后，如果任务已经完成，则移除日志区域
     EVT.bindOnce('clearLogAfterPageSwitch', EVT.list.pageSwitch, () => {
@@ -486,7 +504,7 @@ abstract class InitPageBase {
         await saveArtworkData.save(data)
         this.afterGetWorksData(data)
       }
-    } catch (error) {
+    } catch (error: Error | any) {
       // 当 API 里的网络请求的状态码异常时，会 reject，被这里捕获
       if (error.status) {
         // 请求成功，但状态码不正常

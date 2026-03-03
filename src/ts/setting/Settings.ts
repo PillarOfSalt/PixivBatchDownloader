@@ -28,6 +28,7 @@
 // 但是持久化保存的数据只有一份：最后一次的设置变化是在哪个页面发生的，就保存哪个页面的 settings 数据。
 // 所以当页面刷新时，或者打开新的页面时，会加载设置最后一次发生变化的页面里的 settings 数据
 
+import browser from 'webextension-polyfill'
 import { EVT } from '../EVT'
 import { Utils } from '../utils/Utils'
 import { convertOldSettings } from './ConvertOldSettings'
@@ -60,6 +61,7 @@ export interface SettingChangeData {
 
 interface XzSetting {
   setWantPage: number
+  /** wantPageArr 是从 pageType 0 开始的，也就是没有 Unsupported 页面类型里的值 */
   wantPageArr: number[]
   firstFewImagesSwitch: boolean
   firstFewImages: number
@@ -285,8 +287,8 @@ class Settings {
   private readonly defaultSettings: XzSetting = {
     setWantPage: -1,
     wantPageArr: [
-      -1, -1, -1, -1, -1, 1000, -1, 500, -1, 1000, 100, -1, 100, -1, -1, 1000,
-      100, 100, 100, 100, -1,
+      -1, -1, -1, 1, 1, 1, 50, 100, -1, 100, 100, -1, 100, -1, -1, 1, 100, 100,
+      100, 100, 1,
     ],
     firstFewImagesSwitch: false,
     firstFewImages: 1,
@@ -310,7 +312,7 @@ class Settings {
     needTag: [],
     notNeedTag: [],
     autoStartDownload: true,
-    downloadThread: 5,
+    downloadThread: 3,
     userSetName: 'pixiv/{user}-{user_id}/{id}-{title}',
     namingRuleList: [],
     workDir: false,
@@ -362,7 +364,7 @@ class Settings {
     restrict: 'no',
     widthTagBoolean: true,
     restrictBoolean: false,
-    userBlockList: true,
+    userBlockList: false,
     removeBlockedUsersWork: true,
     blockList: [],
     theme: 'auto',
@@ -581,10 +583,10 @@ class Settings {
   // 读取恢复设置
   private restore() {
     let restoreData = this.defaultSettings
-    // 首先从 chrome.storage 获取配置（从 11.5.0 版本开始）
-    chrome.storage.local.get(Config.settingStoreName, (result) => {
+    // 首先从 browser.storage 获取配置
+    browser.storage.local.get(Config.settingStoreName).then((result) => {
       if (result[Config.settingStoreName]) {
-        restoreData = result[Config.settingStoreName]
+        restoreData = result[Config.settingStoreName] as XzSetting
       } else {
         // 如无数据则尝试从 localStorage 获取配置，因为旧版本的配置储存在 localStorage 中
         const savedSettings = localStorage.getItem(Config.settingStoreName)
@@ -598,16 +600,16 @@ class Settings {
   }
 
   private store = Utils.debounce(() => {
-    // chrome.storage.local 的储存上限是 5 MiB（5242880 Byte）
-    chrome.storage.local.set({
+    // browser.storage.local 的储存上限是 5 MiB（5242880 Byte）
+    browser.storage.local.set({
       [Config.settingStoreName]: this.settings,
     })
   }, 50)
 
   // 接收整个设置项，通过循环将其更新到 settings 上
   // 循环设置而不是整个替换的原因：
-  // 1. 进行类型转换，如某些设置项是 number ，但是数据来源里是 string，setSetting 可以把它们转换到正确的类型
-  // 2. 某些选项在旧版本里没有，所以不能用旧的设置整个覆盖
+  // 1. 进行类型转换，如某些设置项是 number，但是数据来源里是 string，setSetting 可以把它们转换到正确的类型
+  // 2. 某些选项在旧版本里没有，所以不能用旧的设置覆盖新的设置
   private assignSettings(data: XzSetting) {
     const origin = Utils.deepCopy(data)
     for (const [key, value] of Object.entries(origin)) {
