@@ -17,6 +17,7 @@ class InvisibleSettings {
   private readonly cfg: Cfg = {
     createFolderBySl: ['ppdss1', 'switchsl', 'kaiguansl'],
     downloadUgoiraFirst: ['ppdss2', 'dlugoirafirst', 'qw111'],
+    filterSearchResults: ['ppdss3'],
   }
 
   private register() {

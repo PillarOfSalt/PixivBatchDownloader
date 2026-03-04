@@ -1,6 +1,6 @@
 import { EVT } from '../EVT'
 import { log } from '../Log'
-import { lang } from '../Lang'
+import { lang } from '../Language'
 import { store } from '../store/Store'
 import { states } from '../store/States'
 import { downloadStates, DLStatesI } from './DownloadStates'
@@ -204,14 +204,11 @@ class Resume {
     store.URLWhenCrawlStart = meta.URLWhenCrawlStart || ''
 
     // 恢复模式就绪
-    log.success(lang.transl('_已恢复抓取结果'), 2)
+    log.success(lang.transl('_已恢复抓取结果'), 1)
     EVT.fire('resume')
   }
 
   private async saveData() {
-    if (states.mergeNovel) {
-      return
-    }
     // 首先检查这个网址下是否已经存在数据，如果有数据，则清除之前的数据，保持每个网址只有一份数据
     const taskData = (await this.IDB.get(
       this.metaName,
@@ -231,7 +228,7 @@ class Resume {
     }
 
     log.warning(lang.transl('_正在保存抓取结果'))
-    this.taskId = new Date().getTime()
+    this.taskId = Date.now()
 
     this.part = []
 
@@ -256,7 +253,7 @@ class Resume {
 
     this.IDB.add(this.statesName, statesData)
 
-    log.success(lang.transl('_已保存抓取结果'), 2)
+    log.success(lang.transl('_已保存抓取结果'), 1)
   }
 
   // 存储抓取结果
@@ -353,7 +350,7 @@ class Resume {
     const expiryTime = 2592000000
 
     // 每隔一天检查一次数据是否过期
-    const nowTime = new Date().getTime()
+    const nowTime = Date.now()
     let lastCheckTime = 0
     const storeName = 'lastCheckExired'
     const data = localStorage.getItem(storeName)

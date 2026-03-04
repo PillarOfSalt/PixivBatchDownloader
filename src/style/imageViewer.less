@@ -1,3 +1,5 @@
+@import './var.less';
+
 #viewerWarpper {
   position: relative;
   margin: 0;
@@ -8,6 +10,14 @@
   border-bottom: 1px solid #eee;
 
   ul {
+    // 这个高度是为了在有 3 排缩略图时可以全部显示，不会出现滚动条
+    // 对于全是竖图的作品，就是当图片数量为 9 - 12 时
+    // 例如：https://www.pixiv.net/artworks/136489375
+    // 不过只在我的电脑上测试过，我的浏览器最大化时，页面的 vh 是 1017。
+    // 如果某些用户的 vh 比较小（可能是分辨率低，或者浏览器是窗口化的），那么依然可能会出现滚动条
+    // 不过在逻辑分辨率为 1080p 的屏幕上应该都没问题
+    max-height: 68vh;
+    overflow: auto;
     margin: 0;
     padding: 0;
     display: flex;
@@ -39,6 +49,17 @@
 .viewer-backdrop {
   background: rgba(0, 0, 0, 0.8) !important;
 
+  // 图片名称和分辨率
+  .viewer-title {
+    color: #ddd;
+    font-size: 13px;
+    height: 16px;
+    line-height: 16px;
+    padding: 4px 10px;
+    border-radius: 20px;
+    background: rgba(0, 0, 0, 0.7);
+  }
+
   .viewer-canvas {
     background: rgba(0, 0, 0, 0.8) !important;
   }
@@ -52,6 +73,9 @@
       height: 100px;
       width: 100px;
       overflow: hidden;
+      &:hover {
+        background-color: @beautifyBlue !important;
+      }
     }
 
     .viewer-prev {
@@ -78,16 +102,40 @@
       }
     }
 
-    // 这是下载器添加的下载按钮
+    // 所有按钮（包括下载器添加的按钮）
+    ul > li {
+      width: 32px;
+      height: 32px;
+      line-height: 32px;
+      text-align: center;
+    }
+
+    // 下载器添加的按钮
     .viewer-add-btn {
-      color: #fff;
-      font-size: 12px;
-      line-height: 24px;
-      transition: all 1s;
+      color: #eee;
+      font-size: 13px;
+      margin: 0 2px;
+      // transition: all .5s;
+
+      &:hover {
+        color: #fff;
+        background-color: @beautifyBlue;
+      }
 
       &::marker {
         content: none;
       }
+
+      svg {
+        width: 16px;
+        height: 16px;
+      }
+    }
+
+    #imageViewerCopyBtn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
     }
   }
 

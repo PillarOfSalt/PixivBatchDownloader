@@ -2,7 +2,7 @@
 // 这是个单例类，为了控制其执行时机，需要手动执行 init 方法来进行一部分初始化
 import { Tools } from '../Tools'
 import { Colors } from '../Colors'
-import { lang } from '../Lang'
+import { lang } from '../Language'
 import { msgBox } from '../MsgBox'
 import { states } from '../store/States'
 import { toast } from '../Toast'
@@ -45,15 +45,18 @@ class CrawlTagList {
   private showTagListWrap!: HTMLUListElement
 
   private addCrawlBtns() {
-    Tools.addBtn('crawlBtns', Colors.bgBlue, '_抓取标签列表').addEventListener(
-      'click',
-      () => {
-        EVT.fire('closeCenterPanel')
-        this.toggleWrap(true)
-        // 跳转到页面顶部，否则用户可能看不到输入区域
-        window.scrollTo(0, 0)
-      }
-    )
+    Tools.addBtn(
+      'crawlBtns',
+      Colors.bgBlue,
+      '_抓取标签列表',
+      '',
+      'crawlTagList'
+    ).addEventListener('click', () => {
+      EVT.fire('closeCenterPanel')
+      this.toggleWrap(true)
+      // 跳转到页面顶部，否则用户可能看不到输入区域
+      window.scrollTo(0, 0)
+    })
   }
 
   private addElement() {
@@ -144,7 +147,7 @@ class CrawlTagList {
           // 输出提示
           this.showTagListWrap.innerHTML = `<span style="color:${
             Colors.textSuccess
-          }">${lang.transl('_下载完毕')}</span>`
+          }">✅${lang.transl('_下载完毕')}</span>`
           return
         }
 

@@ -12,17 +12,28 @@
 // 当任意一个设置项被赋值时触发（不会区分值是否发生了变化）。这是最常用的事件。
 // 事件的参数里会传递这个设置项的名称和值，可以通过 ev.detail.data 获取，格式如：
 // {name: string, value: any}
-// 如果某个模块要监听特定的设置项，应该使用参数的 name 来判断触发事件的设置项是否是自己需要的设置项
-// 如果不依赖于特定设置项，则应该考虑使用节流或者防抖来限制事件的回调函数的执行频率，防止造成性能问题
+// 如果要监听特定的设置项，应该使用参数的 name 来判断触发事件的设置项是否是自己需要的设置项
+// 如果不依赖于特定设置项，则应该考虑使用节流或者防抖来限制该事件的回调函数的执行频率，以免造成性能问题
+// 示例：
+// window.addEventListener(EVT.list.settingChange, (ev: CustomEventInit) => {
+//   const data = ev.detail.data as any
+//   if (data.name === 'showAdvancedSettings') { }
+//   if (data.value) { }
+// })
 
 // EVT.list.settingInitialized
-// 当设置初始化完毕（以及恢复本地储存的设置）之后触发。这个事件在生命周期里只会触发一次。
-// 过程中，每个设置项都会触发一次 settingChange 事件
+// 当设置初始化完毕之后触发。此时所有设置项都已经恢复了之前储存的值（如果没有储存的设置，则使用默认设置）。
+// 在执行过程中，每个设置项都会触发一次 settingChange 事件
+// 最后会触发一次 settingInitialized 事件
+// 在前台脚本的生命周期里，这个事件只会触发一次
+// 注意：重置设置不会触发这个事件
+// 如果某个模块里需要使用多个设置项，建议绑定这个事件，以确保所有设置都已经恢复了储存的值
 
 // EVT.list.resetSettingsEnd
 // 重置设置之后触发
 // 导入设置之后触发
-// 过程中，每个设置项都会触发一次 settingChange 事件
+// 在执行过程中，每个设置项都会触发一次 settingChange 事件
+// 最后会触发一次 resetSettingsEnd 事件
 
 // 如果打开了多个标签页，每个页面的 settings 数据是相互独立的，在一个页面里修改设置不会影响另一个页面里的设置。
 // 但是持久化保存的数据只有一份：最后一次的设置变化是在哪个页面发生的，就保存哪个页面的 settings 数据。
@@ -36,7 +47,8 @@ import { msgBox } from '../MsgBox'
 import { Config } from '../Config'
 import { secretSignal } from '../utils/SecretSignal'
 import { toast } from '../Toast'
-import { lang } from '../Lang'
+import { lang } from '../Language'
+import { PageName } from '../PageType'
 
 export interface BlockTagsForSpecificUserItem {
   uid: number
@@ -53,16 +65,34 @@ type SettingValue =
   | object[]
   | { [key: number]: string }
   | Map<string, string>
+  | { [key in PageName]: CrawlNumberConfig }
 
 export interface SettingChangeData {
   name: SettingKeys
   value: SettingValue
 }
 
+type CrawlNumberConfig = {
+  /**是否显示“抓取多少作品” */
+  work: boolean
+  /**是否显示“抓取多少页面” */
+  page: boolean
+  /**作品/页数的最小值 */
+  min: number
+  /**作品/页数的最大值 */
+  max: number
+  /**储存默认值和用户修改后的值 */
+  value: number
+  /**显示可用范围的提示信息 */
+  tip: string
+}
+
+type PageEntry = [PageName, any]
+
+// 注意：设置里不能使用 Map，因为把设置保存在 chrome.storage 里时会序列化
+// 如果使用 Map，会被转换为 `Object {}`，导致错误
 interface XzSetting {
-  setWantPage: number
-  /** wantPageArr 是从 pageType 0 开始的，也就是没有 Unsupported 页面类型里的值 */
-  wantPageArr: number[]
+  crawlNumber: { [key in PageName]: CrawlNumberConfig }
   firstFewImagesSwitch: boolean
   firstFewImages: number
   multiImageWorkImageLimitSwitch: boolean
@@ -77,7 +107,7 @@ interface XzSetting {
   downBlackWhiteImg: boolean
   downNotBookmarked: boolean
   downBookmarked: boolean
-  ugoiraSaveAs: 'webm' | 'gif' | 'zip' | 'png'
+  ugoiraSaveAs: 'webm' | 'gif' | 'zip' | 'apng'
   convertUgoiraThread: number
   needTagSwitch: boolean
   notNeedTagSwitch: boolean
@@ -126,6 +156,7 @@ interface XzSetting {
   fileNameLengthLimitSwitch: boolean
   tagsSeparator: ',' | '#' | '^' | '&' | '_'
   fileNameLengthLimit: number
+  /** 图片尺寸。original 原图, regular 普通, small 小图, thumb 方形缩略图 */
   imageSize: 'original' | 'regular' | 'small' | 'thumb'
   dateFormat: string
   userSetLang: 'zh-cn' | 'zh-tw' | 'ja' | 'en' | 'ko' | 'ru' | 'auto'
@@ -178,13 +209,13 @@ interface XzSetting {
   saveMetaType1: boolean
   saveMetaType2: boolean
   saveMetaType3: boolean
+  saveMetaFormatTXT: boolean
+  saveMetaFormatJSON: boolean
   /** 为每个页面类型设置不同的命名规则的开关 */
   setNameRuleForEachPageType: boolean
   /** 每个页面类型所使用的命名规则 */
   // 这里应该使用 Map 结构，但是 JSON.stringify 不能处理 Map 类型，所以简化成了 Object
-  nameRuleForEachPageType: {
-    [key: number]: string
-  }
+  nameRuleForEachPageType: { [key in PageName]: string }
   showAdvancedSettings: boolean
   showNotificationAfterDownloadComplete: boolean
   boldKeywords: boolean
@@ -255,16 +286,13 @@ interface XzSetting {
   tipAltQToQuickDownload: boolean
   tipBookmarkButton: boolean
   highlightFollowingUsers: boolean
-  tipCSV: boolean
   exportIDList: boolean
-  tipExportFollowingUserList: boolean
   displayThumbnailListOnMultiImageWorkPage: boolean
   tipBookmarkManage: boolean
   requestSponsorshipTime: number
   PreviewWorkDetailInfo: boolean
   PreviewDetailInfoWidth: number
   removeWorksOfFollowedUsersOnSearchPage: boolean
-  tipExportAndImportBookmark: boolean
   saveWorkDescription: boolean
   saveEachDescription: boolean
   summarizeDescription: boolean
@@ -272,8 +300,24 @@ interface XzSetting {
   /**设置下载一个文件后，需要等待多久才能开始下一次下载。值为 0 - 3600 秒，允许小数 */
   downloadInterval: number
   downloadIntervalOnWorksNumber: number
+  tipOpenWikiLink: boolean
+  copyWorkInfoFormat: string
+  showCopyBtnOnThumb: boolean
+  copyFormatImage: boolean
+  copyFormatText: boolean
+  copyFormatHtml: boolean
+  tipCopyWorkInfoButton: boolean
+  copyImageSize: 'original' | 'regular'
+  crawlLatestFewWorks: boolean
+  crawlLatestFewWorksNumber: number
+  rememberTheLastSaveLocation: boolean
+  autoMergeNovel: boolean
+  /** 自动合并系列小说时，如果一篇小说属于某个系列，则不下载它（因为合并后的小说里会包含这篇小说，所以没必要重复下载） */
+  skipNovelsInSeriesWhenAutoMerge: boolean
+  seriesNovelNameRule: string
+  filterSearchResults: boolean
+  logVisibleDefault: 'show' | 'hide'
 }
-// chrome storage 里不能使用 Map，因为保存时，Map 会被转换为 Object {}
 
 type SettingKeys = keyof XzSetting
 
@@ -285,11 +329,232 @@ class Settings {
 
   // 默认设置
   private readonly defaultSettings: XzSetting = {
-    setWantPage: -1,
-    wantPageArr: [
-      -1, -1, -1, 1, 1, 1, 50, 100, -1, 100, 100, -1, 100, -1, -1, 1, 100, 100,
-      100, 100, 1,
-    ],
+    crawlNumber: {
+      [PageName.Unsupported]: {
+        work: false,
+        page: false,
+        min: 0,
+        max: 0,
+        value: 0,
+        tip: '-1',
+      },
+      [PageName.Home]: {
+        work: false,
+        page: false,
+        min: 0,
+        max: 0,
+        value: 0,
+        tip: '1',
+      },
+      [PageName.Artwork]: {
+        work: true,
+        page: false,
+        min: 1,
+        max: -1,
+        value: -1,
+        tip: '_负1或者大于0',
+      },
+      [PageName.UserHome]: {
+        work: false,
+        page: true,
+        min: 1,
+        max: -1,
+        value: -1,
+        tip: '_负1或者大于0',
+      },
+      [PageName.BookmarkLegacy]: {
+        work: false,
+        page: true,
+        min: 1,
+        max: -1,
+        value: -1,
+        tip: '_负1或者大于0',
+      },
+      [PageName.Bookmark]: {
+        work: false,
+        page: true,
+        min: 1,
+        max: -1,
+        value: -1,
+        tip: '_负1或者大于0',
+      },
+      [PageName.ArtworkSearch]: {
+        work: false,
+        page: true,
+        min: 1,
+        max: 5000,
+        value: 1,
+        tip: '1 - 5000',
+      },
+      [PageName.AreaRanking]: {
+        work: true,
+        page: false,
+        min: 1,
+        max: 50,
+        value: 50,
+        tip: '',
+      },
+      [PageName.ArtworkRanking]: {
+        work: true,
+        page: false,
+        min: 1,
+        max: 500,
+        value: 100,
+        tip: '1 - 500',
+      },
+      [PageName.Pixivision]: {
+        work: false,
+        page: false,
+        min: 0,
+        max: 0,
+        value: 0,
+        tip: '',
+      },
+      [PageName.BookmarkDetail]: {
+        work: true,
+        page: false,
+        min: 1,
+        max: 1000,
+        value: 100,
+        tip: '1 - 1000',
+      },
+      [PageName.NewArtworkBookmark]: {
+        work: false,
+        page: true,
+        min: 1,
+        max: 100,
+        value: 100,
+        tip: '1 - 100',
+      },
+      [PageName.Discover]: {
+        work: false,
+        page: false,
+        min: 0,
+        max: 0,
+        value: 0,
+        tip: '',
+      },
+      [PageName.NewArtwork]: {
+        work: true,
+        page: false,
+        min: 1,
+        max: 1000,
+        value: 100,
+        tip: '1 - 1000',
+      },
+      [PageName.Novel]: {
+        work: true,
+        page: false,
+        min: 1,
+        max: -1,
+        value: -1,
+        tip: '_负1或者大于0',
+      },
+      [PageName.NovelSeries]: {
+        work: false,
+        page: false,
+        min: 0,
+        max: 0,
+        value: 0,
+        tip: '',
+      },
+      [PageName.NovelSearch]: {
+        work: false,
+        page: true,
+        min: 1,
+        max: 5000,
+        value: 1,
+        tip: '1 - 5000',
+      },
+      [PageName.NovelRanking]: {
+        work: true,
+        page: false,
+        min: 1,
+        max: 100,
+        value: 100,
+        tip: '1 - 100',
+      },
+      [PageName.NewNovelBookmark]: {
+        work: false,
+        page: true,
+        min: 1,
+        max: 100,
+        value: 100,
+        tip: '1 - 100',
+      },
+      [PageName.NewNovel]: {
+        work: true,
+        page: false,
+        min: 1,
+        max: 1000,
+        value: 100,
+        tip: '1 - 1000',
+      },
+      [PageName.ArtworkSeries]: {
+        work: false,
+        page: true,
+        min: 1,
+        max: 1000,
+        value: 1000,
+        tip: '1 - 1000',
+      },
+      [PageName.Following]: {
+        work: false,
+        page: true,
+        min: 1,
+        max: -1,
+        value: 1,
+        tip: '_负1或者大于0',
+      },
+      [PageName.Request]: {
+        work: false,
+        page: false,
+        min: 0,
+        max: 0,
+        value: 0,
+        tip: '',
+      },
+      [PageName.Unlisted]: {
+        work: false,
+        page: false,
+        min: 0,
+        max: 0,
+        value: 0,
+        tip: '',
+      },
+      [PageName.DiscoverUsers]: {
+        work: false,
+        page: false,
+        min: 0,
+        max: 0,
+        value: 0,
+        tip: '',
+      },
+      [PageName.Dashboard]: {
+        work: false,
+        page: false,
+        min: 0,
+        max: 0,
+        value: 0,
+        tip: '',
+      },
+      [PageName.Contest]: {
+        work: false,
+        page: true,
+        min: 1,
+        max: -1,
+        value: -1,
+        tip: '_负1或者大于0',
+      },
+      [PageName.SearchUsers]: {
+        work: false,
+        page: false,
+        min: 0,
+        max: 0,
+        value: 0,
+        tip: '',
+      },
+    },
     firstFewImagesSwitch: false,
     firstFewImages: 1,
     multiImageWorkImageLimitSwitch: false,
@@ -313,15 +578,17 @@ class Settings {
     notNeedTag: [],
     autoStartDownload: true,
     downloadThread: 3,
-    userSetName: 'pixiv/{user}-{user_id}/{id}-{title}',
-    namingRuleList: [],
+    userSetName: Config.defaultNameRule,
+    namingRuleList: [Config.defaultNameRule],
     workDir: false,
     workDirFileNumber: 1,
     workDirNameRule: '{id_num}',
     showOptions: true,
     postDate: false,
+    // 2009 年 1 月 1 日
     postDateStart: 1230739200000,
-    postDateEnd: 1893427200000,
+    // 2100 年 1 月 1 日
+    postDateEnd: 4102416000000,
     previewResult: true,
     previewResultLimit: 3000,
     BMKNumSwitch: false,
@@ -350,7 +617,7 @@ class Settings {
     sizeMin: 0,
     sizeMax: 100,
     novelSaveAs: 'txt',
-    saveNovelMeta: false,
+    saveNovelMeta: true,
     deduplication: false,
     dupliStrategy: 'loose',
     fileNameLengthLimitSwitch: false,
@@ -398,31 +665,42 @@ class Settings {
     saveMetaType1: false,
     saveMetaType2: false,
     saveMetaType3: false,
+    saveMetaFormatTXT: true,
+    saveMetaFormatJSON: false,
     setNameRuleForEachPageType: false,
     nameRuleForEachPageType: {
-      '-1': 'pixiv/{user}-{user_id}/{id}-{title}',
-      '0': 'pixiv/{user}-{user_id}/{id}-{title}',
-      '1': 'pixiv/{user}-{user_id}/{id}-{title}',
-      '2': 'pixiv/{user}-{user_id}/{id}-{title}',
-      '3': 'pixiv/{page_tag}/{user}-{user_id}/{id}-{title}',
-      '4': 'pixiv/{page_tag}/{user}-{user_id}/{id}-{title}',
-      '5': 'pixiv/{page_tag}/{user}-{user_id}/{id}-{title}',
-      '6': 'pixiv/{user}-{user_id}/{id}-{title}',
-      '7': 'pixiv/{page_title}/{rank}-{id}-{title}',
-      '8': 'pixiv/{user}-{user_id}/{id}-{title}',
-      '9': 'pixiv/{user}-{user_id}/{id}-{title}',
-      '10': 'pixiv/{user}-{user_id}/{id}-{title}',
-      '11': 'pixiv/{user}-{user_id}/{id}-{title}',
-      '12': 'pixiv/{user}-{user_id}/{id}-{title}',
-      '13': 'pixiv/{user}-{user_id}/{id}-{title}',
-      '14': 'pixiv/{user}-{user_id}/{series_title}/{series_order}-{title}-{id}',
-      '15': 'pixiv/{page_tag}/{user}-{user_id}/{id}-{title}',
-      '16': 'pixiv/{page_title}/{rank}-{id}-{title}',
-      '17': 'pixiv/{user}-{user_id}/{id}-{title}',
-      '18': 'pixiv/{user}-{user_id}/{id}-{title}',
-      '19': 'pixiv/{user}-{user_id}/{series_title}/{series_order}-{title}-{id}',
-      '20': 'pixiv/{user}-{user_id}/{id}-{title}',
-      '21': 'pixiv/{user}-{user_id}/{id}-{title}',
+      [PageName.Unsupported]: Config.defaultNameRule,
+      [PageName.Home]: Config.defaultNameRule,
+      [PageName.Artwork]: Config.defaultNameRule,
+      [PageName.UserHome]: Config.defaultNameRule,
+      [PageName.BookmarkLegacy]:
+        'pixiv/{page_tag}/{user}-{user_id}/{id}-{title}',
+      [PageName.Bookmark]: 'pixiv/{page_tag}/{user}-{user_id}/{id}-{title}',
+      [PageName.ArtworkSearch]:
+        'pixiv/{page_tag}/{user}-{user_id}/{id}-{title}',
+      [PageName.AreaRanking]: Config.defaultNameRule,
+      [PageName.ArtworkRanking]: 'pixiv/{page_title}/{rank}-{id}-{title}',
+      [PageName.Pixivision]: 'pixivision/{page_title}/{id}',
+      [PageName.BookmarkDetail]: Config.defaultNameRule,
+      [PageName.NewArtworkBookmark]: Config.defaultNameRule,
+      [PageName.Discover]: Config.defaultNameRule,
+      [PageName.NewArtwork]: Config.defaultNameRule,
+      [PageName.Novel]: Config.defaultNameRule,
+      [PageName.NovelSeries]:
+        'pixiv/{user}-{user_id}/{series_title}/{series_order}-{title}-{id}',
+      [PageName.NovelSearch]: 'pixiv/{page_tag}/{user}-{user_id}/{id}-{title}',
+      [PageName.NovelRanking]: 'pixiv/{page_title}/{rank}-{id}-{title}',
+      [PageName.NewNovelBookmark]: Config.defaultNameRule,
+      [PageName.NewNovel]: Config.defaultNameRule,
+      [PageName.ArtworkSeries]:
+        'pixiv/{user}-{user_id}/{series_title}/{series_order}-{title}-{id}',
+      [PageName.Following]: Config.defaultNameRule,
+      [PageName.Request]: Config.defaultNameRule,
+      [PageName.Unlisted]: Config.defaultNameRule,
+      [PageName.DiscoverUsers]: Config.defaultNameRule,
+      [PageName.Dashboard]: Config.defaultNameRule,
+      [PageName.Contest]: 'pixiv/{page_title}/{user}-{user_id}/{id}-{title}',
+      [PageName.SearchUsers]: Config.defaultNameRule,
     },
     showAdvancedSettings: false,
     showNotificationAfterDownloadComplete: false,
@@ -439,7 +717,7 @@ class Settings {
     showOriginImage: true,
     showOriginImageSize: 'original',
     tipHowToUse: true,
-    whatIsNewFlag: 'xuejian&saber',
+    whatIsNewFlag: Config.whatIsNewFlagDefault,
     replaceSquareThumb: true,
     notFolderWhenOneFile: false,
     noSerialNoForSingleImg: true,
@@ -482,22 +760,37 @@ class Settings {
     tipAltQToQuickDownload: true,
     tipBookmarkButton: true,
     highlightFollowingUsers: true,
-    tipCSV: true,
     exportIDList: false,
-    tipExportFollowingUserList: true,
     displayThumbnailListOnMultiImageWorkPage: true,
     tipBookmarkManage: true,
     requestSponsorshipTime: 0,
     PreviewWorkDetailInfo: false,
     PreviewDetailInfoWidth: 400,
     removeWorksOfFollowedUsersOnSearchPage: false,
-    tipExportAndImportBookmark: true,
     saveWorkDescription: false,
     saveEachDescription: true,
     summarizeDescription: false,
     slowCrawlDealy: 1600,
-    downloadInterval: 0,
-    downloadIntervalOnWorksNumber: 120,
+    downloadInterval: 1,
+    downloadIntervalOnWorksNumber: 150,
+    tipOpenWikiLink: true,
+    copyWorkInfoFormat:
+      'id: {id}{n}title: {title}{n}tags: {tags}{n}url: {url}{n}user: {user}',
+    showCopyBtnOnThumb: true,
+    copyFormatImage: false,
+    copyFormatText: true,
+    copyFormatHtml: true,
+    tipCopyWorkInfoButton: true,
+    copyImageSize: 'regular',
+    crawlLatestFewWorks: false,
+    crawlLatestFewWorksNumber: 10,
+    rememberTheLastSaveLocation: false,
+    autoMergeNovel: false,
+    skipNovelsInSeriesWhenAutoMerge: true,
+    seriesNovelNameRule:
+      'novel series/{page_tag}/{series_title}-{series_id}-{user}-{part}-{tags}.{ext}',
+    filterSearchResults: false,
+    logVisibleDefault: 'show',
   }
 
   private allSettingKeys = Object.keys(this.defaultSettings)
@@ -512,8 +805,8 @@ class Settings {
 
   // 值为整数的选项不必单独列出
 
-  // 值为数字数组的选项
-  private numberArrayKeys = ['wantPageArr']
+  // 值为 number[] 的选项（目前没有）
+  private numberArrayKeys = []
 
   // 值为字符串数组的选项
   private stringArrayKeys = [
@@ -594,6 +887,19 @@ class Settings {
           restoreData = JSON.parse(savedSettings)
         }
       }
+
+      // 当一些 key 为 PageName 的配置里增加了新配置时，由于已保存的设置里没有对应（新的页面类型）的配置，所以需要把新的配置添加到已保存的设置里
+      const keys = ['crawlNumber', 'nameRuleForEachPageType'] as const
+      for (const key of keys) {
+        for (const [pageTypeNo, cfg] of Object.entries(
+          this.defaultSettings[key]
+        ) as unknown as PageEntry[]) {
+          if (restoreData[key][pageTypeNo] === undefined) {
+            restoreData[key][pageTypeNo] = cfg
+          }
+        }
+      }
+
       this.assignSettings(restoreData)
       EVT.fire('settingInitialized')
     })
@@ -651,12 +957,11 @@ class Settings {
     this.setSetting('tipAltSToSelectWork', true)
     this.setSetting('tipAltQToQuickDownload', true)
     this.setSetting('tipBookmarkButton', true)
-    this.setSetting('tipCSV', true)
-    this.setSetting('tipExportFollowingUserList', true)
     this.setSetting('tipBookmarkManage', true)
-    this.setSetting('tipExportAndImportBookmark', true)
+    this.setSetting('tipOpenWikiLink', true)
+    this.setSetting('tipCopyWorkInfoButton', true)
 
-    toast.success('✓ ' + lang.transl('_重新显示帮助'))
+    toast.success(lang.transl('_重新显示帮助'))
   }
 
   // 重置设置 或者 导入设置
@@ -727,26 +1032,27 @@ class Settings {
     // 处理数组类型的值
     if (Array.isArray(this.defaultSettings[key])) {
       if (this.stringArrayKeys.includes(key)) {
-        // 字符串转换成 string[]
+        // 把字符串转换成 string[]
         if (valueType === 'string') {
           value = Utils.string2array(value as string)
         }
       }
 
-      if (this.numberArrayKeys.includes(key)) {
-        // 把数组转换成 number[]
-        if (Array.isArray(value)) {
-          value = (value as any[]).map((val: string | number) => {
-            if (typeof val !== 'number') {
-              return Number(val)
-            } else {
-              return val
-            }
-          })
-        } else {
-          return
-        }
-      }
+      // 因为目前 numberArrayKeys 没有任何项，所以这部分代码先注释掉，否则会导致 TS 类型错误
+      // if (this.numberArrayKeys.includes(key)) {
+      //   // 把数组转换成 number[]
+      //   if (Array.isArray(value)) {
+      //     value = (value as any[]).map((val: string | number) => {
+      //       if (typeof val !== 'number') {
+      //         return Number(val)
+      //       } else {
+      //         return val
+      //       }
+      //     })
+      //   } else {
+      //     return
+      //   }
+      // }
     }
 
     // 对于一些不合法的值，重置为默认值
@@ -774,6 +1080,10 @@ class Settings {
       value = this.defaultSettings[key]
     }
 
+    if (key === 'crawlLatestFewWorksNumber' && (value as number) < 1) {
+      value = 1
+    }
+
     if (key === 'setWidthAndOr' && value === '') {
       value = this.defaultSettings[key]
     }
@@ -786,10 +1096,15 @@ class Settings {
       value = (value as string).replace('{id}', '{id_num}')
     }
 
+    // namingRuleList 之前默认是空数组，后来默认包含了默认的命名规则，所以这里做个兼容处理
+    if (key === 'namingRuleList' && (value as string[]).length === 0) {
+      value = [Config.defaultNameRule]
+    }
+
     // 更改设置
     ;(this.settings[key] as any) = value
 
-    // 当修改某些设置时，顺便修改以来它的设置
+    // 当修改某些设置时，顺便修改依赖它的设置
     if (key === 'widthTag') {
       this.settings.widthTagBoolean = value === 'yes'
     }

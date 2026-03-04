@@ -1,20 +1,15 @@
-import browser from 'webextension-polyfill'
-import { API } from './API'
 import { EVT } from './EVT'
 import { pageType } from './PageType'
 import { Tools } from './Tools'
-import { store } from './store/Store'
 import { Utils } from './utils/Utils'
-import { List } from './ManageFollowing'
 import { settings } from './setting/Settings'
-import { toast } from './Toast'
-import { lang } from './Lang'
 import { Config } from './Config'
+import { followingList } from './FollowingList'
 
-type Msg = {
-  msg: string
-  data?: List
-}
+// 备注：
+// 有个 API 也可以获取关注总数量，即获取用户在 PC 端页面的额外数据：
+// https://www.pixiv.net/ajax/user/extra?is_smartphone=0&lang=zh
+// 包含已关注数量、粉丝数量、好 P 友数量
 
 class HighlightFollowingUsers {
   constructor() {
@@ -22,56 +17,13 @@ class HighlightFollowingUsers {
       return
     }
 
-    this.delayCheckUpdate()
+    window.addEventListener(EVT.list.followingUsersChange, () => {
+      this.makeHighlight()
+    })
 
     window.setTimeout(() => {
       this.startMutationObserver()
     }, 0)
-
-    browser.runtime.onMessage.addListener(
-      (
-        msg: unknown,
-        sender: browser.Runtime.MessageSender,
-        sendResponse: Function
-      ): any => {
-        if (!this.isMsg(msg)) {
-          return false
-        }
-
-        if (msg.msg === 'dispathFollowingData') {
-          this.receiveData(msg.data || [])
-          EVT.fire('followingUsersChange')
-        }
-
-        if (msg.msg === 'updateFollowingData') {
-          this.getList().then((list) => {
-            console.log(lang.transl('_已更新关注用户列表'))
-            toast.success(lang.transl('_已更新关注用户列表'), {
-              position: 'topCenter',
-            })
-
-            browser.runtime.sendMessage({
-              msg: 'setFollowingData',
-              data: {
-                user: store.loggedUserID,
-                following: list,
-                total: this.total,
-              },
-            })
-          })
-        }
-
-        if (msg.msg === 'getLoggedUserID') {
-          sendResponse({ loggedUserID: store.loggedUserID })
-        }
-      }
-    )
-
-    if (store.loggedUserID) {
-      browser.runtime.sendMessage({
-        msg: 'requestFollowingData',
-      })
-    }
 
     // 每当下载器获取了页面的主题颜色时
     window.addEventListener(EVT.list.getPageTheme, (ev: CustomEventInit) => {
@@ -129,144 +81,8 @@ class HighlightFollowingUsers {
     })
   }
 
-  // 类型守卫
-  private isMsg(msg: any): msg is Msg {
-    return !!msg.msg
-  }
-
   private pageTheme = ''
-
-  /**当前登录用户的关注用户列表 */
-  private following: string[] = []
-
-  /**当前登录用户的关注用户总数 */
-  private total = 0
-
-  private checkUpdateTimer?: number
-
   private readonly highlightClassName = 'pbdHighlightFollowing'
-
-  private async receiveData(list: List) {
-    const thisUserData = list.find((data) => data.user === store.loggedUserID)
-    if (thisUserData) {
-      this.following = thisUserData.following
-      store.followingUserIDList = this.following
-      this.total = thisUserData.total
-
-      this.makeHighlight()
-    } else {
-      // 恢复的数据里没有当前用户的数据，需要获取
-      this.checkNeedUpdate()
-    }
-  }
-
-  /**全量获取当前用户的所有关注列表 */
-  private async getList(): Promise<string[]> {
-    toast.show(lang.transl('_正在加载关注用户列表'), {
-      position: 'topCenter',
-    })
-
-    // 需要获取公开关注和私密关注
-    const publicList = await this.getFollowingList('show')
-    const privateList = await this.getFollowingList('hide')
-
-    const followingIDList = publicList.concat(privateList)
-    return followingIDList
-  }
-
-  /**获取公开或私密关注的用户 ID 列表 */
-  private async getFollowingList(rest: 'show' | 'hide'): Promise<string[]> {
-    const ids: string[] = []
-    let offset = 0
-    let total = await this.getFollowingTotal(rest)
-
-    if (total === 0) {
-      return ids
-    }
-
-    // 每次请求 100 个关注用户的数据
-    const limit = 100
-
-    while (ids.length < total) {
-      const res = await API.getFollowingList(
-        store.loggedUserID,
-        rest,
-        '',
-        offset,
-        limit
-      )
-      offset = offset + limit
-
-      for (const users of res.body.users) {
-        ids.push(users.userId)
-      }
-
-      if (res.body.users.length === 0) {
-        // 实际获取到的关注用户数量可能比 total 少，这是正常的
-        // 例如 toal 是 3522，实际上获取到的可能是 3483 个，再往后都是空数组了
-        break
-      }
-    }
-
-    return ids
-  }
-
-  /**只请求第一页的数据，以获取 total */
-  private async getFollowingTotal(rest: 'show' | 'hide') {
-    // 关注页面一页显示 24 个作者
-    const res = await API.getFollowingList(store.loggedUserID, rest, '', 0, 24)
-
-    return res.body.total
-  }
-
-  private getUpdateTime() {
-    // 每次检查更新的最低时间间隔是 5 分钟
-    // 如果用户打开了多个标签页，它们都会加载关注列表的第一页来检查数量
-    // 所以间隔不宜太短
-    const base = 300000
-
-    // 产生一个 10 分钟内的随机数
-    const random = Math.random() * 600000
-
-    // 通常不需要担心间隔时间太大导致数据更新不及时
-    // 因为多个标签页里只要有一个更新了数据，所有的标签页都会得到新数据
-    return base + random
-  }
-
-  private async delayCheckUpdate() {
-    window.clearTimeout(this.checkUpdateTimer)
-    this.checkUpdateTimer = window.setTimeout(async () => {
-      this.checkNeedUpdate()
-      return this.delayCheckUpdate()
-    }, this.getUpdateTime())
-  }
-
-  /**检查关注用户的数量，如果数量发生变化则执行全量更新 */
-  private async checkNeedUpdate() {
-    // 在搜索页面里移除已关注用户的作品 功能依赖关注用户列表，所以如果用户启用了该功能，也需要更新关注列表
-    if (
-      !settings.highlightFollowingUsers &&
-      !settings.removeWorksOfFollowedUsersOnSearchPage
-    ) {
-      return
-    }
-
-    // 因为本程序不区分公开和非公开关注，所以只储存总数
-    let newTotal = 0
-    for (const rest of ['show', 'hide']) {
-      const total = await this.getFollowingTotal(rest as 'show' | 'hide')
-      newTotal = newTotal + total
-    }
-
-    if (newTotal !== this.total) {
-      // console.log(`关注用户总数量变化 ${this.total} -> ${newTotal}`)
-      this.total = newTotal
-      browser.runtime.sendMessage({
-        msg: 'needUpdateFollowingData',
-        user: store.loggedUserID,
-      })
-    }
-  }
 
   // 检查包含用户 id 的链接，并且需要以 id 结束
   // 这是因为 id 之后还有字符的链接是不需要的，例如：
@@ -294,7 +110,7 @@ class HighlightFollowingUsers {
             : this.checkUserLinkReg
         )
         if (test && test.length > 1) {
-          match = this.following.includes(test[1])
+          match = followingList.following.includes(test[1])
 
           // 要高亮的元素
           let target: Element = a
@@ -369,7 +185,7 @@ class HighlightFollowingUsers {
     if (pageType.type === pageType.list.UserHome) {
       // 在用户主页里，高亮用户名（因为用户名没有超链接，需要单独处理）
       const userID = Tools.getCurrentPageUserID()
-      const flag = this.following.includes(userID)
+      const flag = followingList.following.includes(userID)
       const h1 = document.querySelector('h1') as HTMLHeadingElement
       if (h1) {
         h1.classList[flag ? 'add' : 'remove'](this.highlightClassName)

@@ -10,7 +10,7 @@ import {
 } from './DownloadType'
 import { store } from '../store/Store'
 import { log } from '../Log'
-import { lang } from '../Lang'
+import { lang } from '../Language'
 import { Colors } from '../Colors'
 import { setSetting, settings } from '../setting/Settings'
 import { Download } from '../download/Download'
@@ -28,7 +28,6 @@ import { Utils } from '../utils/Utils'
 import { pageType } from '../PageType'
 import { msgBox } from '../MsgBox'
 import './CheckWarningMessage'
-import { showHelp } from '../ShowHelp'
 
 class DownloadControl {
   constructor() {
@@ -144,10 +143,12 @@ class DownloadControl {
     window.addEventListener(EVT.list.sendBrowserDownload, () => {
       window.clearTimeout(this.checkDownloadTimeoutTimer)
       this.checkDownloadTimeoutTimer = window.setTimeout(() => {
-        const msg = lang.transl('_可能发生了错误请刷新页面重试')
-        msgBox.once('mayError', msg, 'warning')
+        const msg =
+          lang.transl('_可能发生了错误请刷新页面重试') +
+          '<br>' +
+          lang.transl('_下载卡住的提示')
         log.warning(msg, 1, false, 'mayError')
-      }, 5000)
+      }, 30000)
     })
 
     const clearDownloadTimeoutTimerList = [
@@ -178,11 +179,12 @@ class DownloadControl {
       if (msg.data?.uuid) {
         log.log(lang.transl('_uuid'), 1, false, 'filenameUUID')
         msgBox.once(this.msgFlag, lang.transl('_uuid'), 'show')
+        this.pauseDownload()
       }
 
       // 文件下载成功
       if (msg.msg === 'downloaded') {
-        URL.revokeObjectURL(msg.data.url)
+        URL.revokeObjectURL(msg.data.blobURLFront)
 
         // 发送下载成功的事件
         EVT.fire('downloadSuccess', msg.data)
@@ -227,67 +229,91 @@ class DownloadControl {
       }
     })
 
-    window.addEventListener(EVT.list.downloadComplete, () => {
-      // 如果有等待中的下载任务，则开始下载等待中的任务
-      if (store.waitingIdList.length === 0) {
-        toast.success(lang.transl('_下载完毕2'), {
-          position: 'center',
-        })
+    // 当下载完毕，或者抓取结果为空时，检查是否有等待下载的任务
+    const checkWaitingIdListEvents = [
+      EVT.list.downloadComplete,
+      EVT.list.crawlEmpty,
+    ]
+    checkWaitingIdListEvents.forEach((evt) => {
+      window.addEventListener(evt, () => {
+        // 如果有等待中的下载任务，则开始下载等待中的任务
+        if (store.waitingIdList.length === 0) {
+          toast.success(lang.transl('_下载完毕2'), {
+            position: 'center',
+          })
 
-        // 通知后台清除保存的此标签页的 idList
-        browser.runtime.sendMessage({
-          msg: 'clearDownloadsTempData',
-        })
-      } else {
-        window.clearTimeout(this.crawlIdListTimer)
-        this.crawlIdListTimer = window.setTimeout(() => {
-          const idList = store.waitingIdList
-          store.waitingIdList = []
-          EVT.fire('crawlIdList', idList)
-        }, 0)
-      }
+          // 通知后台清除保存的此标签页的 idList
+          browser.runtime.sendMessage({
+            msg: 'clearDownloadsTempData',
+          })
+        } else {
+          // 下载等待中的任务
+          window.clearTimeout(this.crawlIdListTimer)
+          this.crawlIdListTimer = window.setTimeout(() => {
+            const idList = [...store.waitingIdList]
+            store.waitingIdList = []
+            EVT.fire('crawlIdList', idList)
+          }, 0)
+        }
+      })
     })
   }
 
   private createDownloadArea() {
     const html = `<div class="download_area">
     <div class="centerWrap_btns">
-    <button class="startDownload hasRippleAnimation" type="button" style="background:${Colors.bgBlue};"><span data-xztext="_开始下载"></span><span class="ripple"></span></button>
-    <button class="pauseDownload hasRippleAnimation" type="button" style="background:${Colors.bgYellow};"><span data-xztext="_暂停下载"></span><span class="ripple"></span></button>
-    <button class="stopDownload hasRippleAnimation" type="button" style="background:${Colors.bgRed};"><span data-xztext="_停止下载"></span><span class="ripple"></span></button>
-    <button class="copyUrl hasRippleAnimation" type="button" style="background:${Colors.bgGreen};"><span data-xztext="_复制url"></span><span class="ripple"></span></button>
+      <slot data-name="downloadControlBtns"></slot>
     </div>
     <div class="download_status_text_wrap">
-    <span data-xztext="_当前状态"></span>
-    <span class="down_status" data-xztext="_未开始下载"></span>
-    <span class="skip_tip warn"></span>
-    <span class="convert_tip warn"></span>
-    <span class="bmkAfterDL_tip green"></span>
+      <span data-xztext="_当前状态"></span>
+      <span class="down_status" data-xztext="_未开始下载"></span>
+      <span class="skip_tip warn"></span>
+      <span class="convert_tip warn"></span>
+      <span class="bmkAfterDL_tip green"></span>
     </div>
     </div>`
 
     this.wrapper = Tools.useSlot('downloadArea', html) as HTMLDivElement
     lang.register(this.wrapper)
 
-    this.wrapper
-      .querySelector('.startDownload')!
-      .addEventListener('click', () => {
-        this.startDownload()
-      })
+    // 添加按钮
+    Tools.addBtn(
+      'downloadControlBtns',
+      Colors.bgBlue,
+      '_开始下载',
+      '',
+      'startDownload'
+    ).addEventListener('click', () => {
+      this.startDownload()
+    })
 
-    this.wrapper
-      .querySelector('.pauseDownload')!
-      .addEventListener('click', () => {
-        this.pauseDownload()
-      })
+    Tools.addBtn(
+      'downloadControlBtns',
+      Colors.bgYellow,
+      '_暂停下载',
+      '',
+      'pauseDownload'
+    ).addEventListener('click', () => {
+      this.pauseDownload()
+    })
 
-    this.wrapper
-      .querySelector('.stopDownload')!
-      .addEventListener('click', () => {
-        this.stopDownload()
-      })
+    Tools.addBtn(
+      'downloadControlBtns',
+      Colors.bgRed,
+      '_停止下载',
+      '',
+      'stopDownload'
+    ).addEventListener('click', () => {
+      this.stopDownload()
+    })
 
-    this.wrapper.querySelector('.copyUrl')!.addEventListener('click', () => {
+    Tools.addBtn(
+      'downloadControlBtns',
+      Colors.bgGreen,
+      '_复制url',
+      '',
+      'copyURLs'
+    ).addEventListener('click', () => {
       EVT.fire('showURLs')
     })
   }
@@ -299,7 +325,9 @@ class DownloadControl {
       this.resultBtns.importJSON = Tools.addBtn(
         'exportResult',
         Colors.bgGreen,
-        '_导入抓取结果'
+        '_导入抓取结果',
+        '',
+        'importCrawlResults'
       )
       // 导入抓取结果的按钮始终显示，因为它需要始终可用。
       // 导出抓取结果的按钮只有在可以准备下载时才显示
@@ -316,7 +344,9 @@ class DownloadControl {
       this.resultBtns.exportJSON = Tools.addBtn(
         'exportResult',
         Colors.bgGreen,
-        '_导出抓取结果'
+        '_导出抓取结果',
+        '',
+        'exportCrawlResultsJSON'
       )
       this.resultBtns.exportJSON.style.display = 'none'
 
@@ -332,7 +362,9 @@ class DownloadControl {
       this.resultBtns.exportCSV = Tools.addBtn(
         'exportResult',
         Colors.bgGreen,
-        '_导出csv'
+        '_导出csv',
+        '',
+        'exportCrawlResultsCSV'
       )
       this.resultBtns.exportCSV.style.display = 'none'
 
@@ -343,33 +375,14 @@ class DownloadControl {
         },
         false
       )
-
-      this.resultBtns.exportCSV.addEventListener(
-        'mouseenter',
-        () => {
-          // 鼠标在这个按钮上停留 500 ms 之后，显示提示
-          let timer: number
-          this.resultBtns.exportCSV.addEventListener('mouseleave', () => {
-            window.clearTimeout(timer)
-          })
-          timer = window.setTimeout(() => {
-            msgBox.show(lang.transl('_导出CSV文件的提示'), {
-              title: lang.transl('_导出csv'),
-            })
-            showHelp.show('tipCSV', lang.transl('_导出CSV文件的提示'))
-          }, 500)
-        },
-        false
-      )
     }
   }
 
   // 抓取完毕之后，已经可以开始下载时，显示必要的信息，并决定是否立即开始下载
   private readyDownload() {
-    if (states.busy || states.mergeNovel) {
+    if (states.busy) {
       return
     }
-
     if (store.result.length === 0) {
       return progressBar.reset(0)
     }
@@ -438,7 +451,7 @@ class DownloadControl {
 
     this.setDownloaded()
 
-    this.taskBatch = new Date().getTime() // 修改本批下载任务的标记
+    this.taskBatch = Date.now() // 修改本批下载任务的标记
 
     this.setDownloadThread()
 
@@ -451,6 +464,8 @@ class DownloadControl {
       }, 0)
     }
 
+    toast.show(lang.transl('_开始下载'))
+    // 这条日志前面不添加 emoji
     log.success(lang.transl('_正在下载中'))
 
     if (Config.mobile) {
@@ -473,7 +488,7 @@ class DownloadControl {
       // 如果正在下载中
       if (states.busy) {
         this.pause = true
-        log.warning(lang.transl('_已暂停'), 2)
+        log.warning('⏸️' + lang.transl('_已暂停'), 2)
 
         EVT.fire('downloadPause')
       } else {
@@ -490,7 +505,7 @@ class DownloadControl {
     }
 
     this.stop = true
-    log.error(lang.transl('_已停止'), 2)
+    log.error('🛑' + lang.transl('_已停止'), 2)
     this.pause = false
 
     EVT.fire('downloadStop')
@@ -512,8 +527,9 @@ class DownloadControl {
   private setDownloaded() {
     this.downloaded = downloadStates.downloadedCount()
 
+    // 显示下载进度
     const text = `${this.downloaded} / ${store.result.length}`
-    log.log(text, 2, false)
+    log.log('➡️' + text, 1, false, 'downloadProgress')
 
     // 设置总下载进度条
     progressBar.setTotalProgress(this.downloaded)
@@ -522,7 +538,7 @@ class DownloadControl {
 
     // 所有文件正常下载完毕（跳过下载的文件也算正常下载）
     if (this.downloaded === store.result.length) {
-      log.success(lang.transl('_下载完毕'), 2)
+      log.success('✅' + lang.transl('_下载完毕'), 2)
       window.setTimeout(() => {
         // 延后触发下载完成的事件。因为下载完成事件是由上游事件（跳过下载，或下载成功事件）派生的，如果这里不延迟触发，可能导致其他模块先接收到下载完成事件，后接收到上游事件。
         EVT.fire('downloadComplete')

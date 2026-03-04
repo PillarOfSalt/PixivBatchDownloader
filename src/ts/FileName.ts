@@ -11,159 +11,8 @@ import { Tools } from './Tools'
 // 生成文件名
 class FileName {
   // 下载器所有的动图格式后缀名
-  private readonly ugoiraExt = ['zip', 'webm', 'gif', 'png']
-
+  private readonly ugoiraExt = ['zip', 'webm', 'gif', 'apng']
   private readonly addStr = '[downloader_add]'
-
-  // 生成 {rank} 标记的值
-  private createRank(rank: number | null): string {
-    // 处理空值
-    if (rank === null) {
-      return ''
-    }
-    // string 是旧版本中使用的，以前抓取结果里的 rank 直接就是 '#1' 这样的字符串，后来改成了数字类型
-    if (typeof rank === 'string') {
-      return rank
-    }
-    // 其他的情况则应该是期望的值（数字类型）
-    return '#' + rank
-  }
-
-  // 生成 {p_num} 标记的值
-  private createPNum(data: Result) {
-    // 只有插画和漫画有编号
-    if (data.type === 0 || data.type === 1) {
-      const index = data.index ?? Tools.getResultIndex(data)
-      // 处理第一张图不带序号的情况
-      if (index === 0 && settings.noSerialNo) {
-        if (data.pageCount === 1 && settings.noSerialNoForSingleImg) {
-          return ''
-        }
-        if (data.pageCount > 1 && settings.noSerialNoForMultiImg) {
-          return ''
-        }
-      }
-
-      const p = index.toString()
-      // 处理在前面填充 0 的情况
-      return settings.zeroPadding
-        ? p.padStart(settings.zeroPaddingLength, '0')
-        : p
-    } else {
-      // 其他类型没有编号，返回空字符串
-      return ''
-    }
-  }
-
-  // 生成 {id} 标记的值
-  private createId(data: Result, p_num: string) {
-    // 如果不需要添加序号，或者没有序号，则只返回数字 id
-    if (p_num === '') {
-      return data.idNum.toString()
-    }
-    // 添加序号
-    return `${data.idNum}_p${p_num}`
-  }
-
-  // 返回收藏数的简化显示
-  private getBKM1000(bmk: number): string {
-    if (bmk < 1000) {
-      return '0+'
-    } else {
-      // 1000 以上，以 1000 为单位
-      const str = bmk.toString()
-      return str.slice(0, str.length - 3) + '000+'
-    }
-  }
-
-  // 在文件名前面添加一层文件夹
-  // appendFolder 方法会对非法字符进行处理（包括处理路径分隔符 / 这主要是因为 tags 可能含有斜线 /，需要替换）
-  private appendFolder(fullPath: string, folderName: string): string {
-    const allPart = fullPath.split('/')
-    allPart.splice(allPart.length - 1, 0, Utils.replaceUnsafeStr(folderName))
-    return allPart.join('/')
-  }
-
-  // 不能出现在文件名开头的一些特定字符
-  private readonly checkStartCharList = ['/', ' ']
-
-  // 检查文件名开头是否含有特定字符
-  private checkStartChar(str: string) {
-    for (const check of this.checkStartCharList) {
-      if (str.startsWith(check)) {
-        return true
-      }
-    }
-    return false
-  }
-
-  // 移除文件名开头的特定字符
-  private removeStartChar(str: string) {
-    while (this.checkStartChar(str)) {
-      for (const check of this.checkStartCharList) {
-        if (str.startsWith(check)) {
-          str = str.replace(check, '')
-        }
-      }
-    }
-    return str
-  }
-
-  private readonly atList = ['@', '＠']
-  private RemoveAtFromUsername(name: string) {
-    if (!settings.removeAtFromUsername) {
-      return name
-    }
-
-    for (const at of this.atList) {
-      let index = name.indexOf(at)
-      if (index > 0) {
-        name = name.substring(0, index)
-      }
-    }
-    return name
-  }
-
-  // 传入命名规则和所有标记，生成文件名
-  private generateFileName(rule: string, cfg: Object) {
-    let result = rule
-    // 把命名规则里的标记替换成实际值
-    for (const [key, val] of Object.entries(cfg)) {
-      if (rule.includes(key)) {
-        // 空值替换成空字符串
-        let temp = val.value ?? ''
-
-        // 如果这个值不是字符串类型则转换为字符串
-        temp = typeof temp !== 'string' ? temp.toString() : temp
-
-        // 替换不可以作为文件名的特殊字符
-        if (!val.safe) {
-          temp = Utils.replaceUnsafeStr(temp)
-        }
-
-        // 将标记替换成结果，如果有重复的标记，全部替换
-        result = result.replace(new RegExp(key, 'g'), temp)
-      }
-    }
-
-    // 处理文件名里的一些边界情况
-
-    // 如果文件名开头不可用的特殊字符
-    result = this.removeStartChar(result)
-    // 测试用例
-    // const testStr = ' / / {page_tag} / {page_title} /{id}-{user}'
-    // console.log(this.removeStartChar(testStr))
-
-    // 如果文件名的尾部是 / 则去掉
-    if (result.endsWith('/')) {
-      result = result.substring(0, result.length - 1)
-    }
-
-    // 处理连续的 /
-    result = result.replace(/\/{2,100}/g, '/')
-
-    return result
-  }
 
   /**传入一个抓取结果，生成其文件名 */
   public createFileName(data: Result) {
@@ -307,6 +156,14 @@ class FileName {
         value: this.getBKM1000(data.bmk),
         safe: true,
       },
+      '{age}': {
+        value: Tools.getAgeLimit(data.xRestrict),
+        safe: true,
+      },
+      '{age_r}': {
+        value: Tools.getAgeLimit(data.xRestrict, false),
+        safe: true,
+      },
       '{like}': {
         value: data.likeCount,
         safe: true,
@@ -359,8 +216,31 @@ class FileName {
       },
     }
 
+    let rule = userSetName
+
+    // 有些标记可能是空字符串，移除它们前面的分割符号
+    const mayEmptyList: (keyof typeof cfg)[] = [
+      '{p_num}',
+      '{page_tag}',
+      '{AI}',
+      '{age_r}',
+      '{tags}',
+      '{tags_translate}',
+      '{tags_transl_only}',
+      '{rank}',
+      '{px}',
+      '{series_title}',
+      '{series_order}',
+      '{series_id}',
+    ]
+    mayEmptyList.forEach((tag) => {
+      if (cfg[tag].value === '') {
+        rule = this.removeEmptyTag(rule, tag)
+      }
+    })
+
     // 2 生成文件名
-    let result = this.generateFileName(userSetName, cfg)
+    let result = this.generateFileName(rule, cfg)
 
     // 3 根据某些设置向结果中添加新的文件夹
     // 注意：添加文件夹的顺序会影响文件夹的层级，所以不可随意更改顺序
@@ -427,7 +307,209 @@ class FileName {
     }
 
     // 4 文件夹部分和文件名已经全部生成完毕，处理一些边界情况
+    result = this.handleEdgeCases(result)
 
+    // 5 生成后缀名
+    // 如果是动图，那么此时
+    if (this.ugoiraExt.includes(data.ext) && data.ugoiraInfo) {
+      // 如果需要转换动图，则把后缀名设置为用户选择的动图保存格式
+      if (settings.imageSize !== 'thumb') {
+        data.ext = settings.ugoiraSaveAs
+      }
+      // 下载动图时，如果选择的尺寸是“方形缩略图”则不修改其后缀名，因为此时下载的是静态缩略图。
+      // 其他三种尺寸都是动图。“普通”和“小图”也是动图，只是尺寸比“原图”小。
+    }
+    // 如果是小说，那么此时根据用户设置的动图保存格式，更新其后缀名
+    if (data.type === 3) {
+      data.ext = settings.novelSaveAs
+    }
+    const extResult = '.' + data.ext
+
+    // 6 处理不创建文件夹的情况
+    if (settings.notFolderWhenOneFile && store.result.length === 1) {
+      // 舍弃文件夹部分，只保留文件名
+      result = result.split('/').pop()!
+    }
+
+    // 7 处理文件名长度限制
+    result = this.lengthLimit(result, extResult)
+
+    // 8 添加后缀名
+    result += extResult
+
+    // 9 返回结果
+    return result
+  }
+
+  /** 传入命名规则和所有标记的配置，生成文件名 */
+  public generateFileName(rule: string, cfg: Object) {
+    let result = rule
+    // 把命名规则里的标记替换成实际值
+    for (const [key, val] of Object.entries(cfg)) {
+      if (rule.includes(key)) {
+        // 空值替换成空字符串
+        let temp = val.value ?? ''
+
+        // 如果这个值不是字符串类型则转换为字符串
+        if (typeof temp !== 'string') {
+          temp = temp.toString()
+        }
+
+        // 替换不可以作为文件名的特殊字符
+        if (!val.safe) {
+          temp = Utils.replaceUnsafeStr(temp)
+        }
+
+        // 将标记替换成结果，如果有重复的标记，全部替换
+        result = result.replace(new RegExp(key, 'g'), temp)
+      }
+    }
+
+    // 移除文件名开头的不可用的特殊字符
+    result = this.removeStartChar(result)
+    // 测试用例
+    // const testStr = ' / / {page_tag} / {page_title} /{id}-{user}'
+    // console.log(this.removeStartChar(testStr))
+
+    // 如果文件名的尾部是 / 则去掉
+    if (result.endsWith('/')) {
+      result = result.substring(0, result.length - 1)
+    }
+
+    // 处理连续的 /
+    result = result.replace(/\/{2,100}/g, '/')
+
+    return result
+  }
+
+  // 生成 {rank} 标记的值
+  private createRank(rank: number | null): string {
+    // 处理空值
+    if (rank === null) {
+      return ''
+    }
+    // string 是旧版本中使用的，以前抓取结果里的 rank 直接就是 '#1' 这样的字符串，后来改成了数字类型
+    if (typeof rank === 'string') {
+      return rank
+    }
+    // 其他的情况则应该是期望的值（数字类型）
+    return '#' + rank
+  }
+
+  // 生成 {p_num} 标记的值
+  private createPNum(data: Result) {
+    if (data.type === 0 || data.type === 1 || data.type === 2) {
+      const index = data.index ?? Tools.getResultIndex(data)
+      // 处理第一张图不带序号的情况
+      if (index === 0 && settings.noSerialNo) {
+        if (data.pageCount === 1 && settings.noSerialNoForSingleImg) {
+          return ''
+        }
+        if (data.pageCount > 1 && settings.noSerialNoForMultiImg) {
+          return ''
+        }
+      }
+
+      return this.zeroPadding(index)
+    } else {
+      // 其他类型没有编号，返回空字符串
+      return ''
+    }
+  }
+
+  /** 处理在前面填充 0 的情况 */
+  public zeroPadding(number: number) {
+    const p = number.toString()
+    return settings.zeroPadding
+      ? p.padStart(settings.zeroPaddingLength, '0')
+      : p
+  }
+
+  // 生成 {id} 标记的值
+  private createId(data: Result, p_num: string) {
+    // 如果不需要添加序号，或者没有序号，则只返回数字 id
+    if (p_num === '') {
+      return data.idNum.toString()
+    }
+    // 添加序号
+    return `${data.idNum}_p${p_num}`
+  }
+
+  // 返回收藏数的简化显示
+  public getBKM1000(bmk: number): string {
+    if (bmk < 1000) {
+      return '0+'
+    } else {
+      // 1000 以上，以 1000 为单位
+      const str = bmk.toString()
+      return str.slice(0, str.length - 3) + '000+'
+    }
+  }
+
+  // 在文件名前面添加一层文件夹
+  // appendFolder 方法会对非法字符进行处理（包括处理路径分隔符 / 这主要是因为 tags 可能含有斜线 /，需要替换）
+  private appendFolder(fullPath: string, folderName: string): string {
+    const allPart = fullPath.split('/')
+    allPart.splice(allPart.length - 1, 0, Utils.replaceUnsafeStr(folderName))
+    return allPart.join('/')
+  }
+
+  // 不能出现在文件名开头的一些特定字符
+  private readonly checkStartCharList = ['/', ' ']
+
+  // 检查文件名开头是否含有特定字符
+  private checkStartChar(str: string) {
+    for (const check of this.checkStartCharList) {
+      if (str.startsWith(check)) {
+        return true
+      }
+    }
+    return false
+  }
+
+  // 移除文件名开头的特定字符
+  private removeStartChar(str: string) {
+    while (this.checkStartChar(str)) {
+      for (const check of this.checkStartCharList) {
+        if (str.startsWith(check)) {
+          str = str.replace(check, '')
+        }
+      }
+    }
+    return str
+  }
+
+  private readonly atList = ['@', '＠']
+  public RemoveAtFromUsername(name: string) {
+    if (!settings.removeAtFromUsername) {
+      return name
+    }
+
+    for (const at of this.atList) {
+      let index = name.indexOf(at)
+      if (index > 0) {
+        name = name.substring(0, index)
+      }
+    }
+    return name
+  }
+
+  /** 如果某个标记的值是空字符串，则检查它前面是否有分割字符，有的话就把它和分隔符一起去掉。返回修改后的 rule */
+  // 例如：如果 {part} 是空字符串，那么 `-{part}` 会留下一个横线 `-`
+  // 这里的处理是为了去掉横线。除了 `-` 还检测了其他一些常用的分割字符
+  // 但如果用户在前面添加了自定义文字，是无法去掉自定义文字的，例如 `part:{part}` 会留下 `part`
+  public removeEmptyTag(rule: string, tag: string): string {
+    const symbols = ['-', '_', ' ', ',', '&', '#']
+    for (const symbol of symbols) {
+      rule = rule.replaceAll(symbol + tag, '')
+    }
+    // 不需要替换这个标记本身，因为在后续步骤里它会被替换成它的值（空字符串）
+
+    return rule
+  }
+
+  /** 处理一些边界情况 */
+  public handleEdgeCases(result: string) {
     // 处理连续的 / 有时候两个斜线中间的字段是空值，最后就变成两个斜线挨在一起了
     result = result.replace(/\/{2,100}/g, '/')
 
@@ -444,51 +526,26 @@ class FileName {
     }
 
     result = paths.join('/')
+    return result
+  }
 
-    // 5 生成后缀名
-    // 如果是动图，那么此时根据用户设置的动图保存格式，更新其后缀名
-    if (
-      this.ugoiraExt.includes(data.ext) &&
-      data.ugoiraInfo &&
-      settings.imageSize !== 'thumb'
-    ) {
-      // 当下载图片的方形缩略图时，不修改其后缀名，因为此时下载的是作品的静态缩略图，不是动图
-      data.ext = settings.ugoiraSaveAs
-    }
-    // 如果是小说，那么此时根据用户设置的动图保存格式，更新其后缀名
-    if (data.type === 3) {
-      data.ext = settings.novelSaveAs
-    }
-    const extResult = '.' + data.ext
-
-    // 6 处理不创建文件夹的情况
-    if (settings.notFolderWhenOneFile && store.result.length === 1) {
-      // 舍弃文件夹部分，只保留文件名
-      result = result.split('/').pop()!
-    }
-
-    // 7 文件名长度限制
-    // 不计算文件夹的长度，只计算 文件名+后缀名 部分
-    // 理论上文件夹部分也可能会超长，但是实际使用中几乎不会有人这么设置，所以不处理
+  /** 处理文件名长度限制 */
+  // 不计算文件夹的长度，只计算 文件名+后缀名 部分
+  // 理论上文件夹部分也可能会超长，但是实际使用中几乎不会有人这么设置，所以不处理
+  public lengthLimit(result: string, ext: string) {
+    const extLength = ext.length
     if (settings.fileNameLengthLimitSwitch) {
       let limit = settings.fileNameLengthLimit
       const allPart = result.split('/')
       const lastIndex = allPart.length - 1
 
-      if (allPart[lastIndex].length + extResult.length > limit) {
-        allPart[lastIndex] = allPart[lastIndex].substring(
-          0,
-          limit - extResult.length
-        )
+      if (allPart[lastIndex].length + extLength > limit) {
+        const subString = allPart[lastIndex].substring(0, limit - extLength)
+        allPart[lastIndex] = subString.trim()
       }
 
       result = allPart.join('/')
     }
-
-    // 8 添加后缀名
-    result += extResult
-
-    // 9 返回结果
     return result
   }
 }

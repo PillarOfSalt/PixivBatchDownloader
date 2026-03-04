@@ -1,5 +1,5 @@
 import browser from 'webextension-polyfill'
-import { lang } from './Lang'
+import { lang } from './Language'
 import { EVT } from './EVT'
 import { states } from './store/States'
 import { theme } from './Theme'
@@ -10,6 +10,7 @@ import './OpenCenterPanel'
 import { settings } from './setting/Settings'
 import { BoldKeywords } from './BoldKeywords'
 import { showHelp } from './ShowHelp'
+import { store } from './store/Store'
 
 // 选项卡的名称和索引
 enum Tabbar {
@@ -92,6 +93,13 @@ class CenterPanel {
 
       <div class="centerWrap_con beautify_scrollbar">
 
+      <p id="tipOpenWikiLinkWrap" style="line-height: 1.6;">
+        <span data-xztext="_提示"></span>
+        <span>: </span>
+        <span data-xztext="_提示查看wiki页面"></span>
+        <button class="gray1 textButton" type="button" data-xztext="_我知道了"></button>
+      </p>
+
       <slot data-name="form"></slot>
 
       <div class="help_bar gray1"> 
@@ -123,6 +131,7 @@ class CenterPanel {
 
     // 设置移动端样式
     if (Config.mobile) {
+      document.body.classList.add('mobile')
       this.centerPanel.classList.add('mobile')
     }
   }
@@ -182,7 +191,7 @@ class CenterPanel {
     // 抓取完作品详细数据时，显示
     for (const ev of [EVT.list.crawlComplete, EVT.list.resume]) {
       window.addEventListener(ev, () => {
-        if (!states.quickCrawl) {
+        if (!states.quickCrawl && store.result.length > 0) {
           this.show()
         }
       })
@@ -209,10 +218,7 @@ class CenterPanel {
         let msg =
           lang.transl('_常见问题说明') + lang.transl('_账户可能被封禁的警告')
         if (Config.mobile) {
-          msg =
-            msg +
-            '<br><br>' +
-            lang.transl('_移动端浏览器可能不会建立文件夹的说明')
+          msg += lang.transl('_移动端浏览器可能不会建立文件夹的说明')
         }
         msgBox.show(msg, {
           title: lang.transl('_常见问题'),
@@ -280,9 +286,6 @@ class CenterPanel {
     // 当可以开始下载时，切换到“下载”选项卡
     for (const ev of [EVT.list.crawlComplete, EVT.list.resume]) {
       window.addEventListener(ev, () => {
-        if (states.mergeNovel) {
-          return
-        }
         this.activeTab(Tabbar.Download)
       })
     }
@@ -325,9 +328,6 @@ class CenterPanel {
 
   // 显示中间区域
   public show() {
-    if (states.mergeNovel) {
-      return
-    }
     this.centerPanel.style.display = 'block'
     EVT.fire('centerPanelOpened')
   }

@@ -1,12 +1,12 @@
-import browser from 'webextension-polyfill'
 import { API } from '../API'
 import { Config } from '../Config'
-import { lang } from '../Lang'
+import { lang } from '../Language'
 import { log } from '../Log'
 import { settings } from '../setting/Settings'
 import { Utils } from '../utils/Utils'
 import { downloadInterval } from './DownloadInterval'
-import { SendToBackEndData } from './DownloadType'
+import { Tools } from '../Tools'
+import { SendDownload } from './SendDownload'
 
 type EmbeddedImages = null | {
   [key: string]: string
@@ -14,6 +14,8 @@ type EmbeddedImages = null | {
 
 type NovelImageData = {
   /**图片的 id，可能会重复。id 重复时，它们的 p 不同 */
+  // 对于上传的图片，id 并没有对应的插画作品页面，也没有序号 p
+  // 对于引用自插画的图片，id 就是插画的 id。可能有 p，也可能没有
   id: string
   /**这个属性只在引用其他作品的图片时有值，表示这个图片是作品里的第几张图片（从 1 开始） */
   p: '' | string
@@ -23,105 +25,156 @@ type NovelImageData = {
    * 可能的原因 1：当图片是通过引用作品 ID 插入，但这个图片作品已经不存在了（404）
    * 可能的原因 2：当图片是通过引用作品 ID 插入，但下载器获取到作品数据里的 urls 都是 null（通常是因为用户未登录） */
   url: '' | string
-  blob?: Blob
   /**图片在原文中的标记文字，如 [pixivimage:121979383-1]*/
   flag: string
   /**标记里的图片 id + 序号部分，如 121979383-1（也可能没有序号） */
   flag_id_part: string
 }
 
-type NovelImageList = NovelImageData[]
-
 /**下载小说里的内嵌图片 */
 class DownloadNovelEmbeddedImage {
-  // 小说保存为 txt 时，直接下载小说里的内嵌图片。因为 txt 无法存储图像，只能单独保存
-
-  /**下载小说为 txt 时
+  /**小说保存为 txt 时，直接下载小说里的内嵌图片。因为 txt 无法存储图像，只能单独保存
    *
    * 默认是正常下载小说的情况，可以设置为合并系列小说的情况
    */
   public async TXT(
-    novelID: string,
+    novelId: string,
+    novelTitle: string,
     content: string,
     embeddedImages: EmbeddedImages,
     novelName: string,
-    action: 'downloadNovel' | 'mergeNovel' = 'downloadNovel'
+    interval = 0
   ) {
-    if (!settings.downloadNovelEmbeddedImage) {
-      return
-    }
-
-    const imageList = await this.getImageList(novelID, content, embeddedImages)
+    const imageList = await this.getImageList(novelId, content, embeddedImages)
 
     let current = 1
     const total = imageList.length
     // 保存为 TXT 格式时，每加载完一个图片，就立即保存这个图片
     for (let image of imageList) {
-      log.log(
-        lang.transl('_正在下载小说中的插画', `${current} / ${total}`),
-        1,
-        false,
-        'downloadNovelImage' + novelID
-      )
+      this.logProgress(novelId, novelTitle, current, total)
       current++
       if (image.url === '') {
         log.warning(`image ${image.id} not found`)
         continue
       }
 
-      await downloadInterval.wait()
+      if (interval) {
+        await Utils.sleep(interval)
+      } else {
+        await downloadInterval.wait()
+      }
 
-      image = await this.getImageBlob(image)
-      if (image.blob === undefined) {
-        return
+      const blob = await this.getImage(image.url, 'blob')
+      if (blob === null) {
+        continue
       }
 
       let imageName = Utils.replaceSuffix(novelName, image.url!)
-      // 在文件名末尾加上内嵌图片的 id 和序号
+      // 之前是在文件名的末尾添加图片的 id，但是当文件名很长时，图片 id 甚至更前面的字符可能会被截断，从而产生重名文件
+      // 现在改为添加到 {id} 之后，这样减少了图片 id 被截断的可能性，因为 {id} 通常位于文件名的开头，不容易被截断
+      // 如果 {id} 位于文件名的结尾部分，依然可能会被截断。但这种情况比较少
       const array = imageName.split('.')
-      const addString = image.flag_id_part
-      array[array.length - 2] = array[array.length - 2] + addString
+      const fileName = array[array.length - 2]
+      // 在 fileName 里查找 novelId，如果找到了，就在它后面添加图片 id
+      const index = fileName.indexOf(novelId)
+      if (index !== -1) {
+        array[array.length - 2] =
+          fileName.slice(0, index + novelId.length) +
+          '-' +
+          image.flag_id_part +
+          fileName.slice(index + novelId.length)
+      } else {
+        // 没有找到 novelId，就跟以前一样，在文件名末尾添加图片 id
+        array[array.length - 2] = fileName + '-' + image.flag_id_part
+      }
       imageName = array.join('.')
 
-      // 合并系列小说时，文件直接保存在下载目录里，内嵌图片也保存在下载目录里
-      // 所以要替换掉内嵌图片路径里的斜线
-      if (action === 'mergeNovel') {
-        imageName = Utils.replaceUnsafeStr(imageName)
+      await SendDownload.noReply(blob, imageName)
+      log.persistentRefresh('downloadNovelImage' + novelId)
+    }
+  }
+
+  /**小说保存为 epub 时，内嵌到 Epub 对象里。返回值是个对象：size 是图片体积总数，content 是替换后的正文内容 */
+  public async EPUB(
+    novelId: string,
+    novelTitle: string,
+    content: string,
+    embeddedImages: EmbeddedImages,
+    jepub: any,
+    interval = 0
+  ): Promise<{
+    size: number
+    content: string
+  }> {
+    const imageList = await this.getImageList(novelId, content, embeddedImages)
+
+    let size = 0
+    let current = 1
+    const total = imageList.length
+    for (const image of imageList) {
+      this.logProgress(novelId, novelTitle, current, total)
+      current++
+
+      const imageID = image.flag_id_part
+      if (image.url === '') {
+        content = content.replaceAll(image.flag, `image ${imageID} not found`)
+        continue
       }
 
-      const blob = image.blob
-      let dataURL: string | undefined = undefined
-      if (Config.sendDataURL) {
-        dataURL = await Utils.blobToDataURL(blob)
+      // 加载图片
+      if (interval) {
+        await Utils.sleep(interval)
+      } else {
+        await downloadInterval.wait()
       }
 
-      // 不检查下载状态，默认下载成功
-      const sendData: SendToBackEndData = {
-        msg: 'save_novel_embedded_image',
-        fileName: imageName,
-        id: 'fake',
-        taskBatch: -1,
-        blobURL: URL.createObjectURL(blob),
-        blob: Config.sendBlob ? blob : undefined,
-        dataURL,
+      const buffer = await this.getImage(image.url, 'arrayBuffer')
+      // 如果图片获取失败，将正文里它对应的标记替换为提示文字
+      if (buffer === null) {
+        content = content.replaceAll(image.flag, `fetch ${image.url} failed`)
+        continue
       }
-      browser.runtime.sendMessage(sendData)
+      jepub.image(
+        Config.isFirefox ? Utils.copyArrayBuffer(buffer) : buffer,
+        imageID
+      )
+      size += buffer.byteLength
+
+      // 将小说正文里的图片标记替换为真实的的图片路径，以在 EPUB 里显示
+      // 例如把
+      // [uploadedimage:17995414] 替换成
+      // <img src="assets/17995414.png" />
+      // 小说页面的文件是 OEBPS/page-0.html
+      // 小说里的图片保存在 OEBPS/assets 文件夹里（封面图除外，它直接保存在 OEBPS/cover-image.jpg）
+      // 注意：img src 的 assets 前面不要添加相对位置的符号： ./
+      // 也就是说不能是 src="./assets/17995414.png"
+      // 因为某些在线阅读器(https://epub-reader.online/)会读取图片内容，生成 blob URL，然后替换原 src 里的值。
+      // 当 src 前面有 ./ 的时候，blob URL 会跟在 ./ 后面，导致图片路径错误，无法显示
+      const ext = Utils.getURLExt(image.url)
+      // 在图片前后添加换行，因为有时图片和文字挨在一起，或者多张图片挨在一起。
+      // 不添加换行的话，在某些阅读器里这些内容会并排，影响阅读体验
+      const imgTag = `<br/><img src="assets/${imageID}.${ext}" /><br/>`
+      content = content.replaceAll(image.flag, imgTag)
     }
 
-    log.persistentRefresh('downloadNovelImage' + novelID)
+    log.persistentRefresh('downloadNovelImage' + novelId)
+    return {
+      size,
+      content,
+    }
   }
 
   // 获取正文里上传的图片 id 和引用的图片 id
-  public async getImageList(
+  private async getImageList(
     novelID: string,
     content: string,
     embeddedImages: EmbeddedImages
-  ): Promise<NovelImageList> {
+  ): Promise<NovelImageData[]> {
     return new Promise(async (resolve) => {
       if (!settings.downloadNovelEmbeddedImage) {
         return resolve([])
       }
-      const idList: NovelImageList = []
+      const idList: NovelImageData[] = []
 
       // 获取上传的图片数据
       // 此时可以直接获取到图片 URL
@@ -208,17 +261,9 @@ class DownloadNovelEmbeddedImage {
       } catch (error: Error | any) {
         if (error.status) {
           // 请求成功，但状态码不正常
-          if (error.status === 500 || error.status === 429) {
-            log.error(lang.transl('_抓取被限制时返回空结果的提示'))
-            window.setTimeout(() => {
-              return this.getImageList(novelID, content, embeddedImages)
-            }, Config.retryTime)
-            return
-          } else {
-            // 其他状态码，尚不清楚实际会遇到什么情况，最可能的是作品被删除（404 ）了吧
-            // 此时直接返回数据（不会下载图片，但是后续会在正文里显示对应的提示）
-            return resolve(idList)
-          }
+          // 最可能的是作品被删除（404 ）了
+          // 此时直接返回数据（不会下载图片，但是后续会在正文里显示对应的提示）
+          return resolve(idList)
         } else {
           // 请求失败，没有获得服务器的返回数据，一般都是
           // TypeError: Failed to fetch
@@ -233,26 +278,60 @@ class DownloadNovelEmbeddedImage {
     })
   }
 
-  private async getImageBlob(image: NovelImageData): Promise<NovelImageData> {
-    if (image.url) {
-      let illustration: Blob | undefined = undefined
-      try {
-        illustration = await fetch(image.url).then((response) => {
-          if (response.ok) {
-            return response.blob()
-          }
-        })
-      } catch (error) {
-        console.log(error)
+  private logProgress(
+    id: string,
+    title: string,
+    current: number,
+    total: number
+  ) {
+    log.log(
+      lang.transl(
+        '_正在下载小说x中的插画x',
+        Tools.createWorkLink(id, title, 'novel'),
+        `${current} / ${total}`
+      ),
+      1,
+      false,
+      'downloadNovelImage' + id
+    )
+  }
+
+  /**最多重试一定次数，避免无限重试 */
+  private readonly retryMax = 5
+
+  // txt 里获取 Blob, epub 里需要获取 ArrayBuffer
+  private async getImage(
+    url: string,
+    type: 'blob',
+    retry?: number
+  ): Promise<Blob | null>
+  private async getImage(
+    url: string,
+    type: 'arrayBuffer',
+    retry?: number
+  ): Promise<ArrayBuffer | null>
+  private async getImage(
+    url: string,
+    type: 'blob' | 'arrayBuffer',
+    retry = 0
+  ): Promise<Blob | ArrayBuffer | null> {
+    try {
+      const res = await fetch(url)
+      if (!res.ok) {
+        throw new Error(`${res.status} ${res.statusText}`)
       }
-      // 如果图片获取失败，不重试
-      if (illustration === undefined) {
-        log.error(`fetch ${image.url} failed`)
-        return image
+      const data = await res[type]()
+      return data
+    } catch (error) {
+      retry++
+      // console.log(retry, url)
+      if (retry > this.retryMax) {
+        log.error(`${lang.transl('_下载小说里的图片失败')}: ${url}`)
+        return null
       }
-      image.blob = illustration
+      // 重试下载
+      return this.getImage(url, type as any, retry)
     }
-    return image
   }
 }
 

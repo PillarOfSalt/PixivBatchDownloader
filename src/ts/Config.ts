@@ -24,7 +24,7 @@ class Config {
   /**浏览器是否处于移动端模式 */
   static readonly mobile = navigator.userAgent.includes('Mobile')
   /**检测 Firefox 浏览器 */
-  static readonly isFirefox = window.navigator.userAgent.includes('Firefox')
+  static readonly isFirefox = navigator.userAgent.includes('Firefox')
   static readonly sendBlob = this.isFirefox
   /** 在 Chrome 的隐私窗口里下载时，需要把 blob 对象转换为 dataURL 发送给后台。
    * 不能直接传递 blob，因为这样后台 service worker 里接收时变成了空对象，无法使用。
@@ -35,10 +35,9 @@ class Config {
     !this.isFirefox && browser.extension.inIncognitoContext
   /**ImageViewer 生成的 li 元素的 className */
   static readonly ImageViewerLI = 'xz-thumb-li'
-  /**检测 ImageViewer 生成的 li 元素，以便其他模块进行一些特殊处理 */
-  static checkImageViewerLI(el?: HTMLElement) {
-    return el?.classList.contains(this.ImageViewerLI)
-  }
+  /** 默认的命名规则 */
+  static readonly defaultNameRule = 'pixiv/{user}-{user_id}/{id}-{title}'
+  static readonly whatIsNewFlagDefault = 'xuejian&saber'
 }
 
 export { Config }

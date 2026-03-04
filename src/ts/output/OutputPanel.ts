@@ -1,12 +1,11 @@
 import { EVT } from '../EVT'
-import { lang } from '../Lang'
+import { lang } from '../Language'
 import { store } from '../store/Store'
 import { Utils } from '../utils/Utils'
 import { Config } from '../Config'
 import { theme } from '../Theme'
 import { msgBox } from '../MsgBox'
 import { toast } from '../Toast'
-import { CopyToClipboard } from '../CopyToClipboard'
 
 export type OutputData = {
   content: string
@@ -55,13 +54,17 @@ class OutputPanel {
     })
 
     // 复制输出内容
-    this.copyBtn.addEventListener('click', () => {
+    this.copyBtn.addEventListener('click', async () => {
       const text = this.outputContent.innerText.replaceAll('\n\n', '\n')
-      CopyToClipboard.setClipboard(text)
-
-      window.setTimeout(() => {
-        this.close()
-      }, 100)
+      const copied = await Utils.writeClipboardText(text)
+      if (copied) {
+        toast.success(lang.transl('_已复制到剪贴板'))
+        window.setTimeout(() => {
+          this.close()
+        }, 100)
+      } else {
+        toast.error(lang.transl('_写入剪贴板失败'))
+      }
     })
 
     window.addEventListener(EVT.list.output, (ev: CustomEventInit) => {

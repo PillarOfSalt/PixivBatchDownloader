@@ -1242,13 +1242,15 @@ var __WEBPACK_AMD_DEFINE_FACTORY__, __WEBPACK_AMD_DEFINE_ARRAY__, __WEBPACK_AMD_
 __webpack_require__.r(__webpack_exports__);
 /* harmony import */ var webextension_polyfill__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! webextension-polyfill */ "./node_modules/webextension-polyfill/dist/browser-polyfill.js");
 /* harmony import */ var webextension_polyfill__WEBPACK_IMPORTED_MODULE_0___default = /*#__PURE__*/__webpack_require__.n(webextension_polyfill__WEBPACK_IMPORTED_MODULE_0__);
+/* harmony import */ var _backgroundAPI__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(/*! ./backgroundAPI */ "./src/ts/backgroundAPI.ts");
 
-// 这是一个后台脚本
+
+// 这是一个后台脚本，用于保存、维护、派发用户的关注列表
 class ManageFollowing {
     constructor() {
         this.restore();
         webextension_polyfill__WEBPACK_IMPORTED_MODULE_0___default().runtime.onInstalled.addListener(async () => {
-            // 每次更新或刷新扩展时尝试读取数据，如果数据不存在则设置数据
+            // 每次更新或刷新扩展时尝试读取数据，如果数据不存在则储存初始数据
             const data = await webextension_polyfill__WEBPACK_IMPORTED_MODULE_0___default().storage.local.get(this.store);
             if (data[this.store] === undefined ||
                 Array.isArray(data[this.store]) === false) {
@@ -1263,7 +1265,7 @@ class ManageFollowing {
                 this.dispatchFollowingList(sender?.tab);
             }
             if (msg.msg === 'needUpdateFollowingData') {
-                if (this.status === 'locked') {
+                if (this.uploadStatus === 'locked') {
                     // 查询上次执行更新任务的标签页还是否存在，如果不存在，
                     // 则改为让这次发起请求的标签页执行更新任务
                     const tabs = await this.findAllPixivTab();
@@ -1279,31 +1281,29 @@ class ManageFollowing {
                 else {
                     this.updateTaskTabID = sender.tab.id;
                 }
-                this.status = 'locked';
+                this.uploadStatus = 'locked';
                 webextension_polyfill__WEBPACK_IMPORTED_MODULE_0___default().tabs.sendMessage(this.updateTaskTabID, {
                     msg: 'updateFollowingData',
                 });
             }
             if (msg.msg === 'setFollowingData') {
-                const data = msg.data;
                 // 当前台获取新的关注列表完成之后，会发送此消息。
                 // 如果发送消息的页面和发起请求的页面是同一个，则解除锁定状态
                 if (sender.tab.id === this.updateTaskTabID) {
-                    // set 操作不会被放入等待队列中，而且总是会被立即执行
-                    // 这是因为在请求数据的过程中可能产生了其他操作，set 操作的数据可能已经是旧的了
-                    // 所以需要先应用 set 里的数据，然后再执行其他操作，在旧数据的基础上进行修改
-                    this.setData(data);
-                    // 如果队列中没有等待的操作，则立即派发数据并储存数据
-                    // 如果有等待的操作，则不派发和储存数据，因为稍后队列执行完毕后也会派发和储存数据
-                    // 这是为了避免重复派发和储存数据，避免影响性能
-                    if (this.queue.length === 0) {
-                        this.dispatchFollowingList();
-                        this.storage();
-                    }
-                    this.status = 'idle';
-                    return;
+                    this.uploadStatus = 'idle';
                 }
-                // 如果不是同一个页面，这个 set 操作会被丢弃
+                // 不管数据是否来自于发起请求的页面都更新数据。因为有些操作可能会直接更新数据，没有事先请求批准的环节
+                // set 操作不会被放入等待队列中，而且总是会被立即执行
+                // 这是因为在请求数据的过程中可能产生了其他操作，set 操作的数据可能已经是旧的了
+                // 所以需要先应用 set 里的数据，然后再执行其他操作，在旧数据的基础上进行修改
+                await this.setData(msg.data);
+                // 如果队列中没有等待的操作，则立即派发数据并储存数据
+                // 如果有等待的操作，则不派发和储存数据，因为稍后队列执行完毕后也会派发和储存数据
+                // 这是为了避免重复派发和储存数据，避免影响性能
+                if (this.queue.length === 0) {
+                    this.dispatchFollowingList();
+                    this.storage();
+                }
             }
         });
         // 监听用户新增或取消一个关注的请求
@@ -1373,40 +1373,60 @@ class ManageFollowing {
         this.checkDeadlock();
         this.clearUnusedData();
     }
-    // 类型守卫
-    isMsg(msg) {
-        return !!msg.msg;
-    }
     store = 'following';
     data = [];
-    /**当状态为 locked 时，如果需要增加或删除某个关注的用户，则将其放入等待队列 */
-    queue = [];
-    status = 'idle';
+    uploadStatus = 'idle';
     updateTaskTabID = 0;
+    /**当 uploadStatus 为 locked 时，如果需要增加或删除某个关注的用户，则将其放入等待队列 */
+    queue = [];
+    /** 是否已完成 restore */
+    restored = false;
     async restore() {
-        if (this.status !== 'idle') {
+        if (this.uploadStatus !== 'idle') {
             return;
         }
-        this.status = 'loading';
-        const data = await webextension_polyfill__WEBPACK_IMPORTED_MODULE_0___default().storage.local.get(this.store);
-        if (data[this.store] && Array.isArray(data[this.store])) {
-            this.data = data[this.store];
-            this.status = 'idle';
+        this.uploadStatus = 'loading';
+        const obj = await webextension_polyfill__WEBPACK_IMPORTED_MODULE_0___default().storage.local.get(this.store);
+        if (obj[this.store] && Array.isArray(obj[this.store])) {
+            this.data = obj[this.store];
+            this.data.forEach((item) => {
+                // followedUsersInfo 属性是在 18.4.0 版本添加的，在之前的版本里没有，所以需要添加它
+                if (item.followedUsersInfo === undefined) {
+                    item.followedUsersInfo = [];
+                }
+                // 18.3.1 版本添加了 deletedUsers 属性，但之后不再使用，所以需要移除它
+                if (item.deletedUsers) {
+                    delete item.deletedUsers;
+                }
+            });
+            this.uploadStatus = 'idle';
+            this.restored = true;
         }
-        else {
-            return setTimeout(() => {
-                this.restore();
-            }, 500);
+    }
+    sleep(time) {
+        return new Promise((res) => setTimeout(res, time));
+    }
+    /** 等待数据恢复完毕，然后再操作数据 */
+    // SW 会在空闲 30 秒左右时被浏览器回收，当 SW 再次接到前台的消息时会被再次激活。
+    // 此时需要等待数据恢复完毕再操作数据，否则会造成 BUG
+    async waitRestored() {
+        while (!this.restored) {
+            await this.sleep(100);
         }
+    }
+    // 收到消息时的类型守卫
+    isMsg(msg) {
+        return !!msg.msg;
     }
     /**向前台脚本派发数据
      * 可以指定向哪个 tab 派发
      * 如果未指定 tab，则向所有的 pixiv 标签页派发
      */
     async dispatchFollowingList(tab) {
+        await this.waitRestored();
         if (tab?.id) {
             webextension_polyfill__WEBPACK_IMPORTED_MODULE_0___default().tabs.sendMessage(tab.id, {
-                msg: 'dispathFollowingData',
+                msg: 'dispatchFollowingData',
                 data: this.data,
             });
         }
@@ -1414,55 +1434,63 @@ class ManageFollowing {
             const tabs = await this.findAllPixivTab();
             for (const tab of tabs) {
                 webextension_polyfill__WEBPACK_IMPORTED_MODULE_0___default().tabs.sendMessage(tab.id, {
-                    msg: 'dispathFollowingData',
+                    msg: 'dispatchFollowingData',
                     data: this.data,
                 });
             }
-        }
-    }
-    async dispatchRecaptchaToken(recaptcha_enterprise_score_token) {
-        const tabs = await this.findAllPixivTab();
-        for (const tab of tabs) {
-            webextension_polyfill__WEBPACK_IMPORTED_MODULE_0___default().tabs.sendMessage(tab.id, {
-                msg: 'dispatchRecaptchaToken',
-                data: recaptcha_enterprise_score_token,
-            });
         }
     }
     storage() {
         return webextension_polyfill__WEBPACK_IMPORTED_MODULE_0___default().storage.local.set({ following: this.data });
     }
     /**执行队列中的所有操作 */
-    executionQueue() {
-        if (this.status !== 'idle' || this.queue.length === 0) {
+    async executionQueue() {
+        if (this.uploadStatus !== 'idle' || this.queue.length === 0) {
             return;
         }
         while (this.queue.length > 0) {
             // set 操作不会在此处执行
             const queue = this.queue.shift();
-            this.addOrRemoveOne(queue);
+            await this.addOrRemoveOne(queue);
         }
         // 队列中的所有操作完成后，派发和储存数据
         this.dispatchFollowingList();
         this.storage();
     }
-    setData(data) {
+    async setData(data) {
+        await this.waitRestored();
         const index = this.data.findIndex((following) => following.user === data.user);
         if (index > -1) {
+            // 更新当前登录的用户的关注数据
             this.data[index].following = data.following;
             this.data[index].total = data.total;
-            this.data[index].time = new Date().getTime();
+            this.data[index].time = Date.now();
+            // 历史关注数据采用追加模式，而非直接覆盖
+            data.followedUsersInfo.forEach((newUserInfo) => {
+                const oldUserInfo = this.data[index].followedUsersInfo.find((userInfo) => userInfo.id === newUserInfo.id);
+                if (oldUserInfo) {
+                    oldUserInfo.name = newUserInfo.name;
+                    oldUserInfo.avatar = newUserInfo.avatar;
+                    oldUserInfo.deleteByUser = false;
+                    oldUserInfo.exist = true;
+                }
+                else {
+                    this.data[index].followedUsersInfo.push(newUserInfo);
+                }
+            });
         }
         else {
+            // 如果之前没有保存过当前登录的用户的关注数据，就新增一份数据
             this.data.push({
                 user: data.user,
                 following: data.following,
+                followedUsersInfo: data.followedUsersInfo,
                 total: data.total,
-                time: new Date().getTime(),
+                time: Date.now(),
             });
         }
     }
-    addOrRemoveOne(operate) {
+    async addOrRemoveOne(operate) {
         const i = this.data.findIndex((following) => following.user === operate.loggedUserID);
         if (i === -1) {
             return;
@@ -1470,18 +1498,46 @@ class ManageFollowing {
         if (operate.action === 'add') {
             this.data[i].following.push(operate.userID);
             this.data[i].total = this.data[i].total + 1;
+            // 当用户手动关注一个用户时，需要把这个用户的信息添加到 followedUsersInfo 里
+            const userInfo = this.data[i].followedUsersInfo.find((user) => user.id === operate.userID);
+            if (!userInfo) {
+                try {
+                    const userData = await _backgroundAPI__WEBPACK_IMPORTED_MODULE_1__.backgroundAPI.getUserProfile(operate.userID, '0');
+                    this.data[i].followedUsersInfo.push({
+                        id: operate.userID,
+                        name: userData.body.name || '',
+                        avatar: userData.body.imageBig || userData.body.image || '',
+                        deleteByUser: false,
+                        exist: true,
+                    });
+                }
+                catch (error) {
+                    console.log(`addOrRemoveOne: 获取用户 ${operate.userID} 的信息时出错了`, error);
+                }
+            }
+            else {
+                userInfo.deleteByUser = false;
+                userInfo.exist = true;
+            }
         }
         else if (operate.action === 'remove') {
+            // 更新关注列表和总数
             const index = this.data[i].following.findIndex((id) => id === operate.userID);
             if (index > -1) {
                 this.data[i].following.splice(index, 1);
                 this.data[i].total = this.data[i].total - 1;
             }
+            // 更新 followedUsersInfo 里的状态
+            const userInfo = this.data[i].followedUsersInfo.find((user) => user.id === operate.userID);
+            if (userInfo) {
+                userInfo.deleteByUser = true;
+                userInfo.exist = true;
+            }
         }
         else {
             return;
         }
-        this.data[i].time = new Date().getTime();
+        this.data[i].time = Date.now();
     }
     async findAllPixivTab() {
         const tabs = await webextension_polyfill__WEBPACK_IMPORTED_MODULE_0___default().tabs.query({
@@ -1495,11 +1551,11 @@ class ManageFollowing {
      */
     checkDeadlock() {
         setInterval(async () => {
-            if (this.status === 'locked') {
+            if (this.uploadStatus === 'locked') {
                 const tabs = await this.findAllPixivTab();
                 const find = tabs.find((tab) => tab.id === this.updateTaskTabID);
                 if (!find) {
-                    this.status = 'idle';
+                    this.uploadStatus = 'idle';
                 }
             }
         }, 30000);
@@ -1508,19 +1564,57 @@ class ManageFollowing {
     clearUnusedData() {
         setInterval(() => {
             const day30ms = 2592000000;
-            for (let index = 0; index < this.data.length; index++) {
-                const item = this.data[index];
-                if (new Date().getTime() - item.time > day30ms) {
-                    this.data.splice(index, 1);
-                    this.dispatchFollowingList();
-                    this.storage();
-                    break;
-                }
+            const beforeLen = this.data.length;
+            this.data = this.data.filter((item) => Date.now() - item.time <= day30ms);
+            if (this.data.length !== beforeLen) {
+                this.dispatchFollowingList();
+                this.storage();
             }
         }, 3600000);
     }
 }
 new ManageFollowing();
+
+
+/***/ }),
+
+/***/ "./src/ts/backgroundAPI.ts":
+/*!*********************************!*\
+  !*** ./src/ts/backgroundAPI.ts ***!
+  \*********************************/
+/***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
+
+"use strict";
+__webpack_require__.r(__webpack_exports__);
+/* harmony export */ __webpack_require__.d(__webpack_exports__, {
+/* harmony export */   backgroundAPI: () => (/* binding */ backgroundAPI)
+/* harmony export */ });
+class backgroundAPI {
+    /** 获取用户信息。full=0 获取简略信息，full=1 获取完整信息 */
+    // 如果这个用户不存在了，获取他的数据时会返回 403 状态码，例如：
+    // https://www.pixiv.net/ajax/user/16689973?full=0
+    static async getUserProfile(id, full = '1') {
+        const url = `https://www.pixiv.net/ajax/user/${id}?full=${full}`;
+        return this.fetch(url);
+    }
+    static async fetch(url) {
+        const response = await fetch(url);
+        if (response.ok) {
+            // 请求成功，直接返回数据
+            const data = await response.json();
+            return data;
+        }
+        else {
+            // 请求成功,但状态码异常
+            console.error(`Status Code: ${response.status}`);
+            throw {
+                status: response.status,
+                statusText: response.statusText,
+            };
+        }
+    }
+}
+
 
 
 /***/ })
@@ -1608,7 +1702,7 @@ __webpack_require__.r(__webpack_exports__);
 
 // 当点击扩展图标时，显示/隐藏下载面板
 webextension_polyfill__WEBPACK_IMPORTED_MODULE_1___default().action.onClicked.addListener(function (tab) {
-    // 在本程序没有权限的页面上点击扩展图标时，url 始终是 undefined，此时不发送消息
+    // 如果在本程序没有权限的页面上点击扩展图标，url 始终是 undefined，此时不发送消息
     if (!tab.url) {
         return;
     }
@@ -1642,9 +1736,11 @@ webextension_polyfill__WEBPACK_IMPORTED_MODULE_1___default().runtime.onMessage.a
     // 不能直接在上面设置类型为 msg: SendToBackEndData，否则会报错。因此需要使用类型守卫，真麻烦
     if (!isMsg(msg)) {
         console.warn('收到了无效的消息:', msg);
-        return;
+        return false;
     }
-    // console.log(msg)
+    const tabId = sender.tab.id;
+    // 当存在同名文件时，默认覆写，但前台也可以指定处理方式
+    const conflictAction = msg.conflictAction || 'overwrite';
     // 下载作品的文件
     if (msg.msg === 'save_work_file') {
         // 当处于初始状态时，或者变量被回收了，就从存储中读取数据储存在变量中
@@ -1654,7 +1750,6 @@ webextension_polyfill__WEBPACK_IMPORTED_MODULE_1___default().runtime.onMessage.a
             batchNo = data.batchNo;
             idList = data.idList;
         }
-        const tabId = sender.tab.id;
         // 如果开始了新一批的下载，重设批次编号，并清空下载索引
         if (batchNo[tabId] !== msg.taskBatch) {
             batchNo[tabId] = msg.taskBatch;
@@ -1673,14 +1768,14 @@ webextension_polyfill__WEBPACK_IMPORTED_MODULE_1___default().runtime.onMessage.a
                 .download({
                 url: _url,
                 filename: msg.fileName,
-                conflictAction: 'overwrite',
+                conflictAction,
                 saveAs: false,
             })
                 .then((id) => {
                 // id 是新建立的下载项的 id，使用它作为 key 保存数据
-                // 注意：这里保存的 url 是前台生成的 blob URL，用于下载后让前台吊销该 blob URL
                 dlData[id] = {
-                    url: msg.blobURL,
+                    blobURLFront: msg.blobURL,
+                    blobURLBack: _url.startsWith('blob:') ? _url : '',
                     id: msg.id,
                     tabId: tabId,
                     uuid: false,
@@ -1688,18 +1783,45 @@ webextension_polyfill__WEBPACK_IMPORTED_MODULE_1___default().runtime.onMessage.a
             });
         }
     }
-    // 有些文件属于某个抓取结果的附加项，本身不在抓取结果 store.result 里，所以也没有它的进度条
-    // 对于这些文件直接下载，不需要回调函数，也不需要返回下载结果
+    // 有些文件本身不在抓取结果 store.result 里，所以也不会出现在下载进度条上
+    // 对于这些文件直接下载，不需要返回下载结果
     if (msg.msg === 'save_description_file' ||
         msg.msg === 'save_novel_cover_file' ||
-        msg.msg === 'save_novel_embedded_image') {
+        msg.msg === 'save_novel_embedded_image' ||
+        msg.msg === 'save_novel_series_file') {
         const _url = await getFileURL(msg);
-        webextension_polyfill__WEBPACK_IMPORTED_MODULE_1___default().downloads.download({
+        webextension_polyfill__WEBPACK_IMPORTED_MODULE_1___default().downloads
+            .download({
             url: _url,
             filename: msg.fileName,
-            conflictAction: 'overwrite',
+            conflictAction,
             saveAs: false,
+        })
+            .then((id) => {
+            dlData[id] = {
+                blobURLFront: msg.blobURL,
+                blobURLBack: _url.startsWith('blob:') ? _url : '',
+                id: msg.id,
+                tabId: tabId,
+                uuid: false,
+                noReply: true,
+            };
         });
+    }
+    // 使用 a.download 来下载文件时，不调用 downloads API，并且直接返回下载成功的模拟数据
+    if (msg.msg === 'save_work_file_a_download') {
+        const tabId = sender.tab.id;
+        const data = {
+            msg: 'downloaded',
+            data: {
+                url: '',
+                id: msg.id,
+                tabId,
+                uuid: false,
+            },
+            err: '',
+        };
+        webextension_polyfill__WEBPACK_IMPORTED_MODULE_1___default().tabs.sendMessage(tabId, data);
     }
     if (msg.msg === 'clearDownloadsTempData') {
         if (sender.tab?.id) {
@@ -1709,6 +1831,7 @@ webextension_polyfill__WEBPACK_IMPORTED_MODULE_1___default().runtime.onMessage.a
             setData({ batchNo, idList });
         }
     }
+    return false;
 });
 const isFirefox = navigator.userAgent.includes('Firefox');
 async function getFileURL(msg) {
@@ -1726,6 +1849,14 @@ async function getFileURL(msg) {
     }
     console.error('没有找到可用的下载 URL 或数据');
     return '';
+}
+function revokeBlobURL(url) {
+    if (url && url.startsWith('blob:')) {
+        if (typeof URL !== 'undefined' &&
+            typeof URL.revokeObjectURL === 'function') {
+            URL.revokeObjectURL(url);
+        }
+    }
 }
 // 判断文件名是否变成了 UUID 格式。因为文件名处于整个绝对路径的中间，所以没加首尾标记 ^ $
 const UUIDRegexp = /[0-9a-z]{8}-[0-9a-z]{4}-[0-9a-z]{4}-[0-9a-z]{4}-[0-9a-z]{12}/;
@@ -1758,8 +1889,14 @@ webextension_polyfill__WEBPACK_IMPORTED_MODULE_1___default().downloads.onChanged
         }
         if (msg) {
             // 返回信息
-            webextension_polyfill__WEBPACK_IMPORTED_MODULE_1___default().tabs.sendMessage(_dlData.tabId, { msg, data: _dlData, err });
-            // 清除这个任务的数据
+            if (!_dlData.noReply) {
+                webextension_polyfill__WEBPACK_IMPORTED_MODULE_1___default().tabs.sendMessage(_dlData.tabId, { msg, data: _dlData, err });
+            }
+            // 吊销前后台生成的 blob URL
+            revokeBlobURL(_dlData?.blobURLFront);
+            revokeBlobURL(_dlData?.blobURLBack);
+            // 删除保存的数据
+            delete dlData[detail.id];
             dlData[detail.id] = null;
         }
     }

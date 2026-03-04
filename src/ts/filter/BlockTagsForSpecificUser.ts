@@ -1,6 +1,6 @@
 import { Tools } from '../Tools'
 import { EVT } from '../EVT'
-import { lang } from '../Lang'
+import { lang } from '../Language'
 import { Utils } from '../utils/Utils'
 import {
   settings,

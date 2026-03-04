@@ -10,6 +10,7 @@ class Store {
     this.bindEvents()
   }
 
+  /** 在某些页面类型里，可能没有获取到用户 ID，所以有可能是空字符串 */
   public loggedUserID = ''
 
   public idList: IDData[] = [] // 储存从列表中抓取到的作品的 id
@@ -23,14 +24,8 @@ class Store {
 
   public result: Result[] = [] // 储存抓取结果
 
-  /**系列小说的设定资料 */
-  public novelSeriesGlossary = ''
-
   private artworkIDList: number[] = [] // 储存抓取到的图片作品的 id 列表，用来避免重复添加
   private novelIDList: number[] = [] // 储存抓取到的小说作品的 id 列表，用来避免重复添加
-
-  /**当前登录用户的关注用户列表 */
-  public followingUserIDList: string[] = []
 
   /**记录从每个作品里下载多少个文件 */
   public downloadCount: {
@@ -73,7 +68,7 @@ class Store {
     }
   }
 
-  private readonly fileDataDefault: Result = {
+  private readonly resultDefault: Result = {
     aiType: 0,
     idNum: 0,
     id: '',
@@ -125,9 +120,7 @@ class Store {
     }
 
     // 添加该作品的元数据
-    const workData = Object.assign({}, this.fileDataDefault, data)
-    // 注意：由于 Object.assign 不是深拷贝，所以不可以修改 result 的引用类型数据，否则会影响到源对象
-    // 可以修改基础类型的数据
+    const workData = Object.assign({}, this.resultDefault, data)
 
     if (workData.type === 0 || workData.type === 1) {
       workData.id = workData.idNum + `_p0`
@@ -223,11 +216,7 @@ class Store {
   }
 
   public findResult(id: string) {
-    for (const result of this.result) {
-      if (result.id === id) {
-        return result
-      }
-    }
+    return this.result.find((item) => item.id === id)
   }
 
   public reset() {
@@ -239,7 +228,6 @@ class Store {
     this.waitingIdList = []
     this.rankList = {}
     this.remainingDownload = 0
-    this.novelSeriesGlossary = ''
     this.tag = Tools.getTagFromURL()
     this.title = Tools.getPageTitle()
   }

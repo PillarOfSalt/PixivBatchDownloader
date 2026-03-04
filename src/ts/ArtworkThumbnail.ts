@@ -36,6 +36,16 @@ class ArtworkThumbnail extends WorkThumbnail {
         '.worksUL li>div>div:first-child',
         'div[data-ga4-entity-id^="illust"]>div:nth-child(2)',
         'div[data-ga4-entity-id^="manga"]>div:nth-child(2)',
+        // 在新版搜索页面里使用
+        'li[id]>div:nth-child(2)',
+        // 搜索页面的热门作品，这是我自己添加的 className
+        '.hotBarWorkLink',
+        // 在比赛页面使用
+        '.thumbnail-container',
+        // 在某些比赛页面里会有“注目的应募作品”一栏，使用这个选择器
+        '._module-carousel-container>div',
+        // 首页-插画-瞩目的企划目录里的作品
+        'li[size="1"]',
       ]
       // div[data-ga4-entity-id^="illust"]>div:nth-child(2) 匹配新版首页的插画作品区域
       // 即显示在页面左半边的作品缩略图。它们的元素里含有此类特征：
@@ -60,6 +70,11 @@ class ArtworkThumbnail extends WorkThumbnail {
   protected readonly selectors: string[] = []
 
   protected findThumbnail(parent: HTMLElement) {
+    // pathname 里有 /novel 的页面里也可能有图像作品，所以这个条件不启用
+    // if(window.location.pathname.includes('/novel')){
+    //   return
+    // }
+
     if (!parent.querySelectorAll) {
       return
     }
@@ -76,12 +91,21 @@ class ArtworkThumbnail extends WorkThumbnail {
         continue
       }
 
-      // div[size="184"] 只在 发现 和 发现-推荐用户 和 新版首页 里使用
+      // div[size="184"] 在这些页面里使用
       if (
         selector === 'div[size="184"]' &&
         pageType.type !== pageType.list.Discover &&
         pageType.type !== pageType.list.DiscoverUsers &&
-        pageType.type !== pageType.list.Home
+        pageType.type !== pageType.list.Home &&
+        pageType.type !== pageType.list.SearchUsers &&
+        pageType.type !== pageType.list.Unsupported
+      ) {
+        continue
+      }
+
+      if (
+        selector === '.hotBarWorkLink' &&
+        pageType.type !== pageType.list.ArtworkSearch
       ) {
         continue
       }
@@ -120,6 +144,29 @@ class ArtworkThumbnail extends WorkThumbnail {
           selector === 'div[data-ga4-entity-id^="illust"]>div:nth-child(2)' ||
           selector === 'div[data-ga4-entity-id^="manga"]>div:nth-child(2)') &&
         pageType.type !== pageType.list.Home
+      ) {
+        continue
+      }
+
+      if (
+        selector === 'li[size="1"]' &&
+        pageType.type !== pageType.list.Home &&
+        !window.location.pathname.includes('/illustration')
+      ) {
+        continue
+      }
+
+      if (
+        selector === 'li[id]>div:nth-child(2)' &&
+        pageType.type !== pageType.list.ArtworkRanking
+      ) {
+        continue
+      }
+
+      if (
+        (selector === '.thumbnail-container' ||
+          selector == '._module-carousel-container>div') &&
+        pageType.type !== pageType.list.Contest
       ) {
         continue
       }

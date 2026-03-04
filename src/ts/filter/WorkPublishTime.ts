@@ -34,7 +34,7 @@ class WorkPublishTime {
 
     // 如果传入的 id 匹配到最后一条记录，则将结束时间设置为现在
     if (index >= length - 1) {
-      return [data[length - 1][1], new Date().getTime()]
+      return [data[length - 1][1], Date.now()]
     }
 
     // 如果传入的 id 匹配到第一条记录，则直接返回数据
@@ -61,14 +61,14 @@ class WorkPublishTime {
   private bindEvents() {
     // 获取图像作品的数据
     secretSignal.register('ppdtask1', () => {
-      // 上次记录到 133930000
-      this.crawlData(133280001, 133931259)
+      // 上次记录到 141710000
+      this.crawlData(141090000, 141711580)
     })
 
     // 获取小说作品的数据
     secretSignal.register('ppdtask2', () => {
-      // 上次记录到 25600000
-      this.crawlData(25450000, 25606591, 'novels')
+      // 上次记录到 27400000
+      this.crawlData(27270000, 27401909, 'novels')
     })
   }
 
@@ -77,7 +77,7 @@ class WorkPublishTime {
     end: number,
     type: 'illusts' | 'novels' = 'illusts'
   ): Promise<number[][]> {
-    console.log('start crawl time data')
+    console.log(`start crawl ${type} time data`)
     const result: number[][] = []
 
     const min_illust = 20 // 最早的插画作品

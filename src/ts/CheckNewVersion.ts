@@ -18,7 +18,7 @@ class CheckNewVersion {
     const interval = 1000 * 60 * 30 // 30 分钟检查一次
 
     const lastTime = localStorage.getItem(timeName)
-    if (!lastTime || new Date().getTime() - parseInt(lastTime) > interval) {
+    if (!lastTime || Date.now() - parseInt(lastTime) > interval) {
       // 获取最新的 releases 信息
       const latest = await fetch(
         'https://api.github.com/repos/xuejianxianzun/PixivBatchDownloader/releases/latest'
@@ -28,7 +28,7 @@ class CheckNewVersion {
       // 保存 GitHub 上的版本信息
       localStorage.setItem(verName, latestVer)
       // 保存本次检查的时间戳
-      localStorage.setItem(timeName, new Date().getTime().toString())
+      localStorage.setItem(timeName, Date.now().toString())
     }
 
     // 获取本地扩展的版本号

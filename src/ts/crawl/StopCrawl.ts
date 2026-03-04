@@ -1,6 +1,6 @@
 import { Colors } from '../Colors'
 import { EVT } from '../EVT'
-import { lang } from '../Lang'
+import { lang } from '../Language'
 import { log } from '../Log'
 import { toast } from '../Toast'
 import { Tools } from '../Tools'
@@ -14,13 +14,19 @@ class StopCrawl {
   private btn!: HTMLButtonElement
 
   private addBtn() {
-    this.btn = Tools.addBtn('stopCrawl', Colors.bgRed, '_停止抓取')
+    this.btn = Tools.addBtn(
+      'stopCrawl',
+      Colors.bgRed,
+      '_停止抓取',
+      '',
+      'stopCrawling'
+    )
     this.hide()
 
     this.btn.addEventListener('click', () => {
       this.hide()
       const msg = lang.transl('_已停止抓取')
-      log.error(msg)
+      log.error('🛑' + msg)
       toast.error(msg)
       EVT.fire('stopCrawl')
       states.stopCrawl = true

@@ -1,117 +1,96 @@
 import { Config } from '../Config'
 import { EVT } from '../EVT'
-import { lang } from '../Lang'
 import { pageType } from '../PageType'
 import { settings } from './Settings'
 
-interface WantPageArg {
-  text: string
-  tip: string
-  rangTip: string
-  min: number
-  max: number
+type NewOption = {
+  id: number
+  time: number
 }
 
-interface WantPageEls {
-  text: HTMLSpanElement
-  rangTip: HTMLSpanElement
-  input: HTMLInputElement
-  setMin: HTMLButtonElement
-  setMax: HTMLButtonElement
-}
-
-// 控制每个设置的隐藏、显示
-// 设置页数/个数的提示文本
+/**控制每个设置的隐藏和显示 */
 class Options {
   public init(allOption: NodeListOf<HTMLElement>) {
-    this.showSetWantPageTipButton = document.querySelector(
-      '.settingForm .showSetWantPageTip'
-    )! as HTMLButtonElement
     this.allOption = allOption
-
-    // 获取“页数/个数”设置的元素
-    const wantPageOption = this.getOption(1)!
-    this.wantPageEls = {
-      text: wantPageOption.querySelector(
-        '.setWantPageTip1'
-      )! as HTMLSpanElement,
-      rangTip: wantPageOption.querySelector(
-        '.setWantPageTip2'
-      )! as HTMLSpanElement,
-      input: wantPageOption.querySelector('.setWantPage')! as HTMLInputElement,
-      setMin: wantPageOption.querySelector('#setMin')! as HTMLButtonElement,
-      setMax: wantPageOption.querySelector('#setMax')! as HTMLButtonElement,
-    }
-
-    this.handleShowAdvancedSettings()
     this.bindEvents()
   }
 
-  private showSetWantPageTipButton!: HTMLButtonElement
-  private hiddenButtonPages = [
-    pageType.list.AreaRanking,
-    pageType.list.ArtworkRanking,
-    pageType.list.Pixivision,
-    pageType.list.BookmarkDetail,
-    pageType.list.Discover,
-    pageType.list.NewArtwork,
-    pageType.list.NovelRanking,
-    pageType.list.NewNovel,
-    pageType.list.Request,
-    pageType.list.Unlisted,
-  ]
-
   private allOption!: NodeListOf<HTMLElement>
 
-  private wantPageEls!: WantPageEls
-
-  // 保持显示的选项的 id
+  /**始终保持显示的选项 */
   private readonly whiteList: number[] = [
-    1, 2, 4, 13, 17, 32, 44, 50, 51, 57, 64,
+    2, 4, 13, 17, 20, 26, 32, 44, 50, 51, 57, 64,
   ]
 
-  // 某些页面类型需要隐藏某些选项。当调用 hideOption 方法时，把选项 id 保存起来
-  // 优先级高于 whiteList
-  private hiddenList: number[] = []
+  // 90 天内添加的设置项，显示 new 角标
+  private readonly newRange = 1000 * 60 * 60 * 24 * 90
+  private readonly newOptions: NewOption[] = [
+    {
+      // 复制按钮
+      id: 14,
+      // 2025-10-22
+      time: 1761091200000,
+    },
+    {
+      // 抓取每个用户最新的几个作品
+      id: 15,
+      // 2025-11-04
+      time: 1762214400000,
+    },
+    {
+      // 把文件保存到用户上次选择的位置
+      id: 20,
+      // 2025-11-04
+      time: 1762214400000,
+    },
+    {
+      // 自动合并系列小说
+      id: 73,
+      // 2025-11-17
+      time: 1763337600000,
+    },
+    {
+      // 合并系列小说时的命名规则
+      id: 91,
+      // 2025-11-24
+      time: 1763942400000,
+    },
+    {
+      // 过滤搜索页面的作品
+      id: 92,
+      // 2025-12-19
+      time: 1766102400000,
+    },
+    {
+      // 日志区域的默认可见性
+      id: 93,
+      // 2026-02-28
+      time: 1772287652821,
+    },
+  ]
 
   private bindEvents() {
     window.addEventListener(EVT.list.settingChange, (ev: CustomEventInit) => {
       const data = ev.detail.data as any
       if (data.name === 'showAdvancedSettings') {
-        this.handleShowAdvancedSettings()
+        this.display()
       }
     })
 
-    window.addEventListener(EVT.list.settingInitialized, () => {
-      this.alwaysHideSomeOption()
-    })
-
-    const list = [
-      EVT.list.pageSwitchedTypeNotChange,
-      EVT.list.pageSwitchedTypeChange,
-    ]
-    list.forEach((ev) => {
-      window.addEventListener(ev, () => {
-        this.hiddenList = []
-        window.setTimeout(() => {
-          this.handleShowAdvancedSettings()
-          this.alwaysHideSomeOption()
-        })
-      })
+    window.addEventListener(EVT.list.pageSwitch, () => {
+      window.setTimeout(() => {
+        this.display()
+      }, 0)
     })
   }
 
-  // 总是隐藏某些设置
-  private alwaysHideSomeOption() {
-    this.hideOption([79, 80])
-
-    // 在移动端某些设置不会生效，所以隐藏它们
-    // 主要是和作品缩略图相关的一些设置
-    if (Config.mobile) {
-      this.hideOption([18, 68, 55, 71, 62, 40])
-    }
+  private display() {
+    this.handleShowAdvancedSettings()
+    this.alwaysHideSomeOption()
+    this.showNewIcon()
   }
 
+  /**根据显示/隐藏高级设置来处理每个选项的显示与隐藏 */
   private handleShowAdvancedSettings() {
     for (const option of this.allOption) {
       if (option.dataset.no === undefined) {
@@ -122,24 +101,50 @@ class Options {
 
       // 如果需要隐藏高级设置
       if (!settings.showAdvancedSettings) {
-        // 如果在白名单中，并且当前页面不需要隐藏它，那么它就是显示的
-        if (this.whiteList.includes(no) && !this.hiddenList.includes(no)) {
+        // 然后判断是否在白名单里
+        if (this.whiteList.includes(no)) {
           this.showOption([no])
-        }
-
-        // 如果没有在白名单中，或者当前页面需要隐藏它，就隐藏它
-        if (!this.whiteList.includes(no) || this.hiddenList.includes(no)) {
-          option.style.display = 'none'
+        } else {
+          this.hideOption([no])
         }
       } else {
-        // 如果需要显示高级设置，那么只隐藏当前页面需要隐藏的选项
-        if (this.hiddenList.includes(no)) {
-          option.style.display = 'none'
-        } else {
-          this.showOption([no])
-        }
+        // 如果需要显示高级设置
+        this.showOption([no])
       }
     }
+  }
+
+  /**总是隐藏某些设置 */
+  private alwaysHideSomeOption() {
+    this.hideOption([15, 79, 80, 92])
+
+    // 某些设置在移动端不会生效，所以隐藏它们
+    // 主要是和作品缩略图相关的一些设置、增强功能
+    if (Config.mobile) {
+      this.hideOption([18, 68, 55, 71, 62, 40])
+    }
+
+    // 大部分设置在 pixivision 里都不适用，所以需要隐藏它们
+    if (pageType.type === pageType.list.Pixivision) {
+      this.hideOption([
+        0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 16, 18, 19, 21, 22,
+        23, 24, 26, 27, 28, 30, 31, 33, 34, 35, 36, 37, 38, 39, 40, 42, 43, 44,
+        46, 47, 48, 49, 50, 51, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65,
+        66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83,
+        84, 85, 86, 87, 88, 89, 90, 91, 92,
+      ])
+    }
+  }
+
+  /**显示 new 角标 */
+  private showNewIcon() {
+    const now = Date.now()
+    this.newOptions.forEach((option) => {
+      if (now - option.time <= this.newRange) {
+        const el = this.getOption(option.id)
+        el.classList.add('new')
+      }
+    })
   }
 
   // 使用编号获取指定选项的元素
@@ -155,6 +160,10 @@ class Options {
   // 显示或隐藏指定的选项
   private setOptionDisplay(no: number[], display: string) {
     for (const number of no) {
+      // 抓取多少页面/作品的显示与否不是在这里控制的，所以跳过它们
+      if (number === 0 || number === 1) {
+        continue
+      }
       this.getOption(number).style.display = display
     }
   }
@@ -168,53 +177,13 @@ class Options {
   }
 
   // 隐藏指定的选项。参数是数组，传递设置项的编号。
-  // 注意：由于这个方法会修改 hiddenList，所以它是有副作用的
-  // 这个方法只应该在其他类里面使用，在这个类里不要直接调用它
   public hideOption(no: number[]) {
-    this.hiddenList = no
     this.setOptionDisplay(no, 'none')
   }
 
   // 显示指定的选项。因为页面无刷新加载，所以一些选项被隐藏后，可能需要再次显示
   public showOption(no: number[]) {
     this.setOptionDisplay(no, 'flex')
-  }
-
-  // 设置“抓取多少作品/页面” 选项的提示和预设值
-  public setWantPageTip(arg: WantPageArg) {
-    // 当页面里设置的是作品个数，而非页面数量时，隐藏这个按钮，因为它只在设置页面数量时有用
-    if (this.hiddenButtonPages.includes(pageType.type)) {
-      this.showSetWantPageTipButton.style.display = 'none'
-    } else {
-      this.showSetWantPageTipButton.style.display = 'inline-block'
-    }
-
-    // 设置这个选项的文字
-    lang.updateText(this.wantPageEls.text, arg.text)
-    this.wantPageEls.text.dataset.xztip = arg.tip
-    this.wantPageEls.text.dataset.tip = lang.transl(arg.tip as any)
-
-    // 设置最小值和最大值
-    this.wantPageEls.setMin.textContent = arg.min.toString()
-    this.wantPageEls.setMax.textContent = arg.max.toString()
-    this.wantPageEls.setMin.onclick = () => {
-      this.wantPageEls.input.value = arg.min.toString()
-      this.wantPageEls.input.dispatchEvent(new Event('change'))
-    }
-    this.wantPageEls.setMax.onclick = () => {
-      this.wantPageEls.input.value = arg.max.toString()
-      this.wantPageEls.input.dispatchEvent(new Event('change'))
-    }
-
-    // 设置可以输入的值的范围提示
-    // 需要翻译的情况
-    if (arg.rangTip.startsWith('_')) {
-      lang.updateText(this.wantPageEls.rangTip, arg.rangTip)
-    } else {
-      // 也可能直接传递了字符串，不需要翻译
-      lang.updateText(this.wantPageEls.rangTip, '')
-      this.wantPageEls.rangTip.textContent = arg.rangTip
-    }
   }
 }
 

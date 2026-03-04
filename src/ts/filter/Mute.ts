@@ -1,5 +1,5 @@
 import { API } from '../API'
-import { lang } from '../Lang'
+import { lang } from '../Language'
 import { log } from '../Log'
 import { Tools } from '../Tools'
 
@@ -77,7 +77,7 @@ class Mute {
         this.got = true
         if (error.status === 401) {
           console.error(
-            'get mute settings error ' + lang.transl('_作品页状态码401')
+            'get mute settings error ' + lang.transl('_状态码401的提示')
           )
         }
         return resolve(error.status)

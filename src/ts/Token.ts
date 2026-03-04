@@ -32,7 +32,7 @@ class Token {
 
   private interval = 300000 // 两次更新之间的最小时间间隔。目前设置为 5 分钟
   private async updateToken() {
-    const nowTime = new Date().getTime()
+    const nowTime = Date.now()
     const lastTimeStr = localStorage.getItem(this.timeStore)
 
     if (
@@ -53,7 +53,7 @@ class Token {
       if (match && match[1] && match[1].length === 32) {
         this.token = match[1]
         localStorage.setItem(this.tokenStore, this.token)
-        localStorage.setItem(this.timeStore, new Date().getTime().toString())
+        localStorage.setItem(this.timeStore, Date.now().toString())
         return
       }
     }
@@ -72,7 +72,7 @@ class Token {
 
         if (this.token) {
           localStorage.setItem(this.tokenStore, this.token)
-          localStorage.setItem(this.timeStore, new Date().getTime().toString())
+          localStorage.setItem(this.timeStore, Date.now().toString())
         } else {
           console.error('UpdateToken failed: no token found!')
         }

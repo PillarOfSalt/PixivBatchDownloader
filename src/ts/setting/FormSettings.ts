@@ -4,6 +4,8 @@ import { settings, setSetting, SettingKeys } from './Settings'
 import { SettingsForm } from './SettingsForm'
 import { DateFormat } from '../utils/DateFormat'
 import { nameRuleManager } from './NameRuleManager'
+import { Utils } from '../utils/Utils'
+import { Config } from '../Config'
 
 // 管理 from 表单里的输入选项（input 元素和 textarea 元素）
 // 从 settings 里恢复选项的值；当选项改变时保存到 settings 里
@@ -86,6 +88,8 @@ class FormSettings {
       'saveMetaType1',
       'saveMetaType2',
       'saveMetaType3',
+      'saveMetaFormatTXT',
+      'saveMetaFormatJSON',
       'setNameRuleForEachPageType',
       'showAdvancedSettings',
       'showNotificationAfterDownloadComplete',
@@ -128,9 +132,17 @@ class FormSettings {
       'saveWorkDescription',
       'saveEachDescription',
       'summarizeDescription',
+      'copyFormatImage',
+      'copyFormatText',
+      'copyFormatHtml',
+      'showCopyBtnOnThumb',
+      'crawlLatestFewWorks',
+      'rememberTheLastSaveLocation',
+      'autoMergeNovel',
+      'skipNovelsInSeriesWhenAutoMerge',
+      'filterSearchResults',
     ],
     text: [
-      'setWantPage',
       'firstFewImages',
       'multiImageWorkImageLimit',
       'convertUgoiraThread',
@@ -163,6 +175,8 @@ class FormSettings {
       'slowCrawlDealy',
       'downloadInterval',
       'downloadIntervalOnWorksNumber',
+      'copyWorkInfoFormat',
+      'crawlLatestFewWorksNumber',
     ],
     radio: [
       'ugoiraSaveAs',
@@ -189,19 +203,21 @@ class FormSettings {
       'exportLogTiming',
       'downloadOrder',
       'downloadOrderSortBy',
+      'copyImageSize',
+      'logVisibleDefault',
     ],
-    textarea: ['notNeedTag', 'blockList', 'createFolderTagList'],
+    textarea: [
+      'notNeedTag',
+      'blockList',
+      'createFolderTagList',
+      'seriesNovelNameRule',
+    ],
     datetime: ['postDateStart', 'postDateEnd'],
   }
 
   private restoreTimer = 0
 
   private bindEvents() {
-    // 页面切换时，从设置里恢复当前页面的页数/个数
-    window.addEventListener(EVT.list.pageSwitchedTypeChange, () => {
-      this.restoreWantPage()
-    })
-
     window.addEventListener(EVT.list.settingChange, () => {
       window.clearTimeout(this.restoreTimer)
       this.restoreTimer = window.setTimeout(() => {
@@ -214,20 +230,8 @@ class FormSettings {
   // 该函数只应执行一次，否则事件会重复绑定
   private ListenChange() {
     for (const name of this.inputFileds.text) {
-      // 对于某些特定输入框，不使用通用的事件处理函数
-      if (name === 'setWantPage') {
-        continue
-      }
-
       this.saveTextInput(name)
     }
-
-    // setWantPage 变化时，保存到 wantPageArr
-    this.form.setWantPage.addEventListener('change', () => {
-      const temp = Array.from(settings.wantPageArr)
-      temp[pageType.type] = Number.parseInt(this.form.setWantPage.value)
-      setSetting('wantPageArr', temp)
-    })
 
     for (const name of this.inputFileds.textarea) {
       this.saveTextInput(name)
@@ -248,15 +252,15 @@ class FormSettings {
 
   /**根据文本长度，动态设置 textarea 的高度 */
   private setRows(name: SettingKeys) {
+    const el = this.form[name] as HTMLInputElement
     // 下载器的 textarea 默认 rows 是 1，随着内容增多，应该增大 rows，以提供更好的交互体验
     // 由于文本内容可能有数字、字母、中日文，所以 length 只是个大致的值。
-    // 对于中日文，假设 50 个字符为一行（PC 端的宽度）
-    // 对于数字、字母，80 个字符为一行
-    let oneRowLength = 50
-    if (name === 'blockList') {
-      oneRowLength = 80
+    // 如果含有非 ASCII 字符，假设 50 个字符为一行（PC 端的宽度）
+    // 如果全部是 ASCII 字符，则 90 个字符为一行
+    let oneRowLength = Config.mobile ? 20 : 50
+    if (Utils.isAscii(el.value)) {
+      oneRowLength = Config.mobile ? 30 : 90
     }
-    const el = this.form[name] as HTMLInputElement
 
     let rows = Math.ceil(el.value.length / oneRowLength)
     // 如果值是空字符串，rows 会是 0，此时设置为 1
@@ -273,12 +277,6 @@ class FormSettings {
   // 读取设置，恢复到表单里
   private restoreFormSettings() {
     for (const name of this.inputFileds.text) {
-      // setWantPage 需要从 wantPageArr 恢复
-      if (name === 'setWantPage') {
-        this.restoreWantPage()
-        continue
-      }
-
       this.restoreString(name)
     }
 
@@ -376,14 +374,6 @@ class FormSettings {
       // 把时间戳转换成 input 使用的字符串
       const date = settings[name] as number
       this.form[name].value = DateFormat.format(date, 'YYYY-MM-DDThh:mm')
-    }
-  }
-
-  // 从设置里恢复当前页面的页数/个数
-  private restoreWantPage() {
-    const want = settings.wantPageArr[pageType.type]
-    if (want !== undefined) {
-      this.form.setWantPage.value = want.toString()
     }
   }
 }

@@ -20,15 +20,37 @@ class SaveArtworkData {
     const tagsWithTransl: string[] = Tools.extractTags(data, 'both') // 保存 tag 列表，附带翻译后的 tag
     const tagsTranslOnly: string[] = Tools.extractTags(data, 'transl') // 保存翻译后的 tag 列表
 
-    const aiMarkString = Tools.getAIGeneratedMark(body.aiType)
+    // 添加“原创”对应的标签
+    // 对 Pixiv 行为的说明：
+    // 只有当 isOriginal 为 true 时，Pixiv 才会认为这是一个原创作品，并且会在标签列表最前面显示加粗的“原创”标签（具体文字会根据页面显示语言变化）
+    // 如果 isOriginal 为 false，那么即使 tags 里有“オリジナル”标签，Pixiv 也不会把这个作品当作原创作品处理
+    // PS：如果两个条件都满足，此时 tag 里的“オリジナル”标签不会显示出来，因为已经有加粗显示的“原创”标签了
+    // 为了与 Pixiv 的行为保持一致（在标签列表前面显示“原创”标记），下载器也需要进行相同的处理
+    if (data.body.isOriginal) {
+      const originalMark = Tools.getOriginalMark()
+      Tools.unshiftTag(tags, originalMark)
+      Tools.unshiftTag(tagsWithTransl, originalMark)
+      Tools.unshiftTag(tagsTranslOnly, originalMark)
+    }
+
+    // 判断是不是 AI 生成的作品
+    let aiType = body.aiType
+    if (aiType !== 2) {
+      if (Tools.checkAIFromTags(tagsWithTransl)) {
+        aiType = 2
+      }
+    }
+
+    // 添加“AI生成”对应的标签
+    const aiMarkString = Tools.getAIGeneratedMark(aiType)
     if (aiMarkString) {
-      tags.unshift(aiMarkString)
-      tagsWithTransl.unshift(aiMarkString)
-      tagsTranslOnly.unshift(aiMarkString)
+      Tools.unshiftTag(tags, aiMarkString)
+      Tools.unshiftTag(tagsWithTransl, aiMarkString)
+      Tools.unshiftTag(tagsTranslOnly, aiMarkString)
     }
 
     const filterOpt: FilterOption = {
-      aiType: body.aiType,
+      aiType,
       createDate: body.createDate,
       id: body.id,
       workType: body.illustType,
@@ -68,7 +90,7 @@ class SaveArtworkData {
         // 插画或漫画
         const imgUrl = body.urls.original // 作品的原图 URL
         if (imgUrl === null) {
-          log.error(`${Tools.createWorkLink(body.id, true)} URLs are null`)
+          log.error(`${Tools.createWorkLink(body.id)} URLs are null`)
           return
         }
 
@@ -76,7 +98,7 @@ class SaveArtworkData {
         const ext = tempExt[tempExt.length - 1]
 
         store.addResult({
-          aiType: body.aiType,
+          aiType,
           id: body.id,
           idNum: idNum,
           // 对于插画和漫画的缩略图，当一个作品包含多个图片文件时，需要转换缩略图 url
@@ -133,11 +155,15 @@ class SaveArtworkData {
         }
 
         store.addResult({
-          aiType: body.aiType,
+          aiType,
           id: body.id,
           idNum: idNum,
+          // 动图的 body.urls 里的属性、图片尺寸与插画、漫画一致
           thumb: body.urls.thumb,
           pageCount: pageCount,
+          // 对于动图，当用户设置了不下载原图时，下载器会保存尺寸较小的 zip 文件（如果有）
+          // meta.body.originalSrc 和 meta.body.src 都是 zip 文件
+          // 前者是完整尺寸，后者是 600x600 的
           original: meta.body.originalSrc,
           regular: meta.body.src,
           small: meta.body.src,

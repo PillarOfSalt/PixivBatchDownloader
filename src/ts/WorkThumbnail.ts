@@ -33,7 +33,11 @@ abstract class WorkThumbnail {
 
   /**为作品缩略图绑定事件 */
   // 注意：在移动端页面，此时获取的 id 可能是空字符串。可以在执行回调时尝试再次获取 id
-  protected bindEvents(el: HTMLElement, id: string | '') {
+  // isSeries: 这个 id 是否是系列 id。默认为否，即 id 默认为单个作品的 id。
+  // 因为小说的系列经常和单篇小说混在同一个列表里，所以为小说的系列添加了这个标记。
+  // 但实际上效果不太好，因为缩略图元素被添加到页面上之后可能会变化，导致 isSeries 状态可能不再准确
+  // 所以如果需要判断 isSeries 的话，最好在执行回调时再判断一次
+  protected bindEvents(el: HTMLElement, id: string | '', isSeries = false) {
     // 如果这个缩略图元素、或者它的直接父元素、或者它的直接子元素已经有标记，就跳过它
     // mouseover 这个标记名称不可以修改，因为它在 Pixiv Previewer 里硬编码了
     // https://github.com/xuejianxianzun/PixivBatchDownloader/issues/212
@@ -56,20 +60,20 @@ abstract class WorkThumbnail {
     // 添加标记的目的是为了减少事件重复绑定的情况发生
     ;(el as HTMLElement).dataset.mouseover = '1'
 
-    this.foundCallback.forEach((cb) => cb(el, id))
+    this.foundCallback.forEach((cb) => cb(el, id, isSeries))
 
     el.addEventListener('mouseenter', (ev) => {
-      this.enterCallback.forEach((cb) => cb(el, id, ev))
+      this.enterCallback.forEach((cb) => cb(el, id, ev, isSeries))
     })
 
     el.addEventListener('mouseleave', (ev) => {
-      this.leaveCallback.forEach((cb) => cb(el, ev))
+      this.leaveCallback.forEach((cb) => cb(el, ev, isSeries))
     })
 
     el.addEventListener(
       Config.mobile ? 'touchend' : 'click',
       (ev) => {
-        this.clickCallback.forEach((cb) => cb(el, id, ev))
+        this.clickCallback.forEach((cb) => cb(el, id, ev, isSeries))
       },
       false
     )
@@ -104,11 +108,13 @@ abstract class WorkThumbnail {
   /**添加下载器寻找到一个作品缩略图时的回调。
    * 注意：这个回调只会执行一次，因为它不是根据用户操作的事件触发的。
    *
-   * 回调函数会接收到 2 个参数：
+   * 回调函数会接收到以下参数：
    *
    * @el 作品缩略图的元素
    *
    * @id 作品 id（在移动端页面里，此时传递的 id 可能是空字符串 ''）
+   *
+   * @isSeries 这个 id 是否是系列 id
    */
   public onFound(cb: Function) {
     this.foundCallback.push(cb)
@@ -116,13 +122,15 @@ abstract class WorkThumbnail {
 
   /**添加鼠标进入作品缩略图时的回调。
    *
-   * 回调函数会接收到 3 个参数：
+   * 回调函数会接收到以下参数：
    *
    * @el 作品缩略图的元素
    *
    * @id 作品 id
    *
    * @ev Event 对象
+   *
+   * @isSeries 这个 id 是否是系列 id
    */
   public onEnter(cb: Function) {
     this.enterCallback.push(cb)
@@ -130,11 +138,13 @@ abstract class WorkThumbnail {
 
   /**添加鼠标离开作品缩略图时的回调。
    *
-   * 回调函数会接收到 2 个参数：
+   * 回调函数会接收到以下参数：
    *
    * @el 作品缩略图的元素
    *
    * @ev Event 对象
+   *
+   * @isSeries 这个 id 是否是系列 id
    *
    * 没有 id 参数，因为鼠标离开时的 id 就是鼠标进入时的 id
    */
@@ -144,13 +154,15 @@ abstract class WorkThumbnail {
 
   /**添加鼠标点击作品缩略图时的回调。
    *
-   * 回调函数会接收到 3 个参数：
+   * 回调函数会接收到以下参数：
    *
    * @el 作品缩略图的元素
    *
    * @id 作品 id
    *
    * @ev Event 对象
+   *
+   * @isSeries 这个 id 是否是系列 id
    */
   public onClick(cb: Function) {
     this.clickCallback.push(cb)
@@ -158,7 +170,7 @@ abstract class WorkThumbnail {
 
   /**添加鼠标点击缩略图里的收藏按钮时的回调。
    *
-   * 回调函数会接收到 4 个参数：
+   * 回调函数会接收到以下参数：
    *
    * @el 作品缩略图的元素
    *

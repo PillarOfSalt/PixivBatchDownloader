@@ -1,8 +1,9 @@
 import { Config } from './Config'
 import { ArtworkData, NovelData } from './crawl/CrawlResult'
-import { lang } from './Lang'
+import { lang } from './Language'
 import { pageType } from './PageType'
-import { WorkTypeString, Result } from './store/StoreType'
+import { wiki } from './setting/Wiki'
+import { WorkTypeString, Result, IDData } from './store/StoreType'
 import { Utils } from './utils/Utils'
 
 type artworkDataTagsItem = {
@@ -95,6 +96,9 @@ class Tools {
     if (nowURL.pathname.includes('/tags/')) {
       return decodeURIComponent(nowURL.pathname.split('tags/')[1].split('/')[0])
     }
+    if (nowURL.pathname.startsWith('/search')) {
+      return decodeURIComponent(Utils.getURLSearchField(location.href, 'q'))
+    }
 
     // 默认情况，从查询字符串里获取，如下网址
     // https://www.pixiv.net/bookmark.php?tag=R-18
@@ -170,6 +174,41 @@ class Tools {
     } else {
       return this.getNovelId(a.href)
     }
+  }
+
+  /**从 DOM 元素中获取系列的 id **/
+  static findSeriesIdFromElement(
+    el: HTMLElement,
+    type: 'illusts' | 'novels' = 'illusts'
+  ): string {
+    if (!el) {
+      return ''
+    }
+    let a: HTMLAnchorElement
+    if (el.nodeName === 'A') {
+      a = el as HTMLAnchorElement
+    } else {
+      // 不区分是插画还是小说，因为它们的 id 都在 /series/ 后面
+      a = el.querySelector('a[href*="series/"]') as HTMLAnchorElement
+    }
+    if (!a) {
+      return ''
+    }
+
+    // 判断链接是插画/漫画系列还是小说系列
+    if (type === 'novels') {
+      // https://www.pixiv.net/novel/series/9114820
+      if (!a.href.includes('/novel/series/')) {
+        return ''
+      }
+    } else {
+      // https://www.pixiv.net/user/9460149/series/320377
+      if (!a.href.includes('/user/')) {
+        return ''
+      }
+    }
+    // 如果链接符合 type，则提取系列 id
+    return Utils.getURLPathField(a.href, 'series')
   }
 
   static readonly userIDRegExp = /\/users\/(\d+)/
@@ -255,6 +294,10 @@ class Tools {
       return match[1]
     }
 
+    // 还有些其他情况，例如在比赛页面里，对应的 script 标签在 body 里，而且使用了双引号：
+    // user_id: "11111111",
+    // 由于在比赛页面里并不需要获取自己的 ID 来使用，所以这里就不写了
+
     const element = document.querySelector('#qualtrics_user-id')
     if (element) {
       const text = element.textContent
@@ -336,26 +379,41 @@ class Tools {
   }
 
   // 创建下载面板上的通用按钮
-  // 注意 textFlag 和 titleFlag 必须是 LangText 里存在的属性，这是为了能根据语言设置动态切换文本
-  // 如果 text 和 title 是直接设置的字符串，那么不应该使用这个方法设置，而是由调用者自行设置
+  // 注意：如果希望按钮的文本和 title 能根据下载器的语言切换，那么对应的参数需要使用 LangText 里存在的属性
+  // 也就是以下划线 _ 开头
   static addBtn(
     slot: string,
-    bg: string = '',
-    textFlag: string = '',
-    titleFlag: string = ''
+    bg: string,
+    text: string,
+    title: string,
+    id: string
   ) {
     const btn = document.createElement('button')
+    id && btn.setAttribute('id', id)
     btn.type = 'button'
     btn.style.backgroundColor = bg
     btn.classList.add('hasRippleAnimation')
 
-    titleFlag && btn.setAttribute('data-xztitle', titleFlag)
-
     // 把文本添加到内部的 span 里
-    if (textFlag) {
+    if (text) {
       const span = document.createElement('span')
-      span.setAttribute('data-xztext', textFlag)
+      // 判断是否需要翻译
+      if (text.startsWith('_')) {
+        span.setAttribute('data-xztext', text)
+      } else {
+        span.textContent = text
+      }
       btn.append(span)
+    }
+
+    // 添加 title 属性
+    if (title) {
+      // 判断是否需要翻译
+      if (title.startsWith('_')) {
+        btn.setAttribute('data-xztitle', title)
+      } else {
+        btn.setAttribute('title', title)
+      }
     }
 
     // 添加一个用于显示动画的 span
@@ -364,11 +422,13 @@ class Tools {
     btn.append(ripple)
 
     // 生成的 btn 代码例如：
-    // <button type="button" data-xztitle="${titleFlag}" style="background:${bg};"><span data-xztext="textFlag"></span><span class="ripple"></span></button>
+    // <button id="${id}" type="button" class="hasRippleAnimation" data-xztitle="${title}" style="background-color: ${bg};"><span data-xztext="${text}">text</span><span class="ripple"></span></button>
 
-    // 添加这个按钮
+    // 添加这个按钮并注册事件
     this.useSlot(slot, btn)
     lang.register(btn)
+    wiki.registerBtn(btn)
+
     return btn
   }
 
@@ -383,6 +443,15 @@ class Tools {
     if (result.startsWith(' ')) {
       result = result.replace(/ */, '')
     }
+
+    // 在一个页面类型里多次抓取时，标题里会包含上一次的抓取结果数量
+    // 处理：
+    // '[pixiv] 10 插画今日排行榜 2025年11月2日' 去掉 '10 '
+    // 处理：
+    // '25 [pixiv]发现' 去掉开头的数字
+    result = result
+      .replace(/\[pixiv\] \d+ /, '[pixiv] ')
+      .replace(/\d+ \[pixiv\]/, '[pixiv]')
 
     return result
   }
@@ -490,6 +559,7 @@ class Tools {
     // 'https://i.pximg.net/c/250x250_80_a2/img-master/img/2019/06/23/17/29/27/75369283_square1200.jpg'
     // 排行榜页面的图片 URL 如：
     // 'https://i.pximg.net/c/240x480/img-master/img/2022/08/01/17/59/39/100156836_p0_master1200.jpg'
+    // 'https://i.pximg.net/c/480x960/img-master/img/2025/11/01/00/00/22/136937607_p0_master1200.jpg'
     const test = url.match(this.convertThumbURLReg)
     if (!test || !test[1]) {
       return url
@@ -536,14 +606,12 @@ class Tools {
     return false
   }
 
-  // 传入作品 id，生成作品页面的超链接
-  /**
-   *
-   * @param id 作品 id
-   * @param artwork true 图像作品； false 小说作品。默认为图像作品
-   * @returns 超链接（A 标签）
-   */
-  static createWorkLink(id: number | string, artwork = true) {
+  /** 传入作品 id，生成作品页面的超链接，即 A 标签 */
+  static createWorkLink(
+    id: number | string,
+    title?: string,
+    type: 'artwork' | 'novel' = 'artwork'
+  ) {
     // 对于图像作品，在作品页面链接后面添加 #p+1 可以在打开页面后，定位到对应的图片
     const array = id.toString().split('_p')
     const idNum = array[0]
@@ -554,10 +622,10 @@ class Tools {
       p = Number.parseInt(array[1]) + 1
     }
 
-    const href = `https://www.pixiv.net/${artwork ? 'i' : 'n'}/${idNum}${
+    const href = `https://www.pixiv.net/${type === 'artwork' ? 'i' : 'n'}/${idNum}${
       hasP ? `#${p}` : ''
     }`
-    return `<a href="${href}" target="_blank">${id}</a>`
+    return `<a href="${href}" target="_blank">${title || id}</a>`
   }
 
   // 传入用户 id，生成用户页面的超链接
@@ -566,10 +634,11 @@ class Tools {
    * @param userID 用户 id
    * @returns 超链接（A 标签）
    */
-  static createUserLink(userID: number | string) {
+  static createUserLink(userID: number | string, userName = '') {
     const idNum = typeof userID === 'number' ? userID : Number.parseInt(userID)
     const href = `https://www.pixiv.net/users/${idNum}`
-    return `<a href="${href}" target="_blank">${idNum}</a>`
+    // 如果传入了 userName，则使用 userName 作为链接文本，否则使用 id 作为链接文本
+    return `<a href="${href}" target="_blank">${userName || idNum}</a>`
   }
 
   // 简介里的链接目前有这 3 种，其中站内链接缩写需要替换成完整的 URL，否则将其转换为文本时，只会留下缩写，丢失了链接。
@@ -619,6 +688,69 @@ class Tools {
     return str
   }
 
+  /** 从小说数据里提取嵌入的图片资源 **/
+  static extractEmbeddedImages(data: NovelData) {
+    let imags: null | {
+      [key: string]: string
+    } = null
+    if (data.body.textEmbeddedImages) {
+      imags = {}
+      for (const [id, value] of Object.entries(data.body.textEmbeddedImages)) {
+        imags[id] = value.urls.original
+      }
+    }
+    return imags
+  }
+
+  /**对小说正文里的一些标记进行替换 */
+  static replaceNovelContentFlag(str: string) {
+    str = this.replaceJumpuri(str)
+    str = str.replace(/\[jump:.*?\]/g, '')
+    str = this.replaceRb(str)
+    str = this.replaceChapter(str)
+    return str
+  }
+
+  // '[[jumpuri:予約ページ>https://www.amazon.co.jp/dp/4758092486]]'
+  // 替换成
+  // '予約ページ（https://www.amazon.co.jp/dp/4758092486）'
+  static replaceJumpuri(str: string) {
+    let reg = /\[\[jumpuri:(.*?)>(.*?)\]\]/g
+    let temp
+    while ((temp = reg.exec(str))) {
+      str = str.replace(temp[0], `${temp[1].trim()}（${temp[2].trim()}）`)
+      reg.lastIndex = 0
+    }
+
+    return str
+  }
+
+  // > '[[rb:莉莉丝 > Lilith]]'
+  // 替换成
+  // '莉莉丝（Lilith）'
+  static replaceRb(str: string) {
+    let reg = /\[\[rb:(.*?)>(.*?)\]\]/g
+    let temp
+    while ((temp = reg.exec(str))) {
+      str = str.replace(temp[0], `${temp[1].trim()}（${temp[2].trim()}）`)
+      reg.lastIndex = 0
+    }
+    return str
+  }
+
+  // > '[chapter:标题]'
+  // 替换成
+  // '标题'
+  static replaceChapter(str: string) {
+    const reg = /\[chapter:(.*?)\]/g
+    let temp
+    while ((temp = reg.exec(str))) {
+      str = str.replace(temp[0], temp[1])
+      reg.lastIndex = 0
+    }
+    return str
+  }
+
   /**替换 EPUB 文本里的特殊字符和换行符 */
   // 换行符必须放在最后处理，以免其 < 符号被替换
   // 把所有换行符统一成 <br/>（包括 \n）
@@ -633,9 +765,11 @@ class Tools {
       .replace(/\n/g, '<br/>')
   }
 
-  // 把所有换行符统一成 <br/>（包括 \n）
-  // 之后统一替换为 <p> 与 </p>，以对应 EPUB 文本惯例
+  /**把所有换行符统一成 <br/>（包括 \n）, 之后统一替换为 <p> 与 </p>，以对应 EPUB 文本惯例 */
   static replaceEPUBTextWithP(str: string) {
+    if (!str) {
+      return ''
+    }
     return (
       '<p>' +
       str
@@ -844,6 +978,7 @@ class Tools {
     }
   }
 
+  /** 储存 Pixiv 每种显示语言里，“AI 生成”标记所使用的文字 */
   static readonly AIMark: Map<string, string> = new Map([
     ['zh-cn', 'AI生成'],
     ['zh-tw', 'AI生成'],
@@ -851,7 +986,22 @@ class Tools {
     ['ja', 'AI生成'],
     ['ko', 'AI 생성'],
     ['ru', 'сгенерированный ИИ'],
+    ['th', 'สร้างโดย AI'],
+    ['ms', 'Janaan AI'],
   ])
+
+  /** 检查标签列表中是否包含 AI 生成的标记 */
+  // 有些用户在上传 AI 作品时选择了非 AI 生成，但标签列表里可能有 AI 生成相关标签例如：
+  // https://www.pixiv.net/en/artworks/136175064
+  // 检查的字符是“AI生成”和“AI-Generated”
+  static checkAIFromTags(tags: string[]) {
+    return tags.some((tag) => {
+      const lowerTag = tag.toLowerCase()
+      return (
+        lowerTag.startsWith('ai生成') || lowerTag.startsWith('ai-generated')
+      )
+    })
+  }
 
   /**如果一个作品是 AI 生成的，则返回特定的字符串标记
    *
@@ -859,9 +1009,53 @@ class Tools {
    */
   static getAIGeneratedMark(aiType?: 0 | 1 | 2) {
     if (aiType === 2) {
-      return this.AIMark.get(lang.htmlLangType)
+      return this.AIMark.get(lang.htmlLangType) || 'AI-generated'
     }
     return ''
+  }
+
+  static readonly originalMark: Map<string, string> = new Map([
+    ['zh-cn', '原创'],
+    ['zh-tw', '原創'],
+    ['en', 'Original'],
+    ['ja', 'オリジナル'],
+    ['ko', '오리지널'],
+    ['ru', 'Оригинал'],
+    ['th', 'ออริจินัล'],
+    ['ms', 'Asli'],
+  ])
+
+  static getOriginalMark() {
+    return this.originalMark.get(lang.htmlLangType) || 'オリジナル'
+  }
+
+  /** 向标签列表前面添加传入的标签 */
+  // 目前用来添加“原创”标记和“AI生成”标记
+  // 当具有多个标记时，遵从 Pixiv 页面显示的顺序，依次是：R-18 AI生成 原创
+  // 测试用例：
+  // https://www.pixiv.net/artworks/140494669
+  // https://www.pixiv.net/novel/show.php?id=27131021
+  // 所以 R-18 或 R-18G 标签总是保持第一位，其他要插入的标签需要排在它后面
+  // 至于“AI生成”和“原创”标签的顺序，则依赖调用顺序来控制。先添加“原创”，再添加“AI生成”，就能保持正确的顺序
+  // 但在某些情况下，顺序可能依然会错乱，例如：
+  // 作品前两个标签是“R-18”和“AI生成”，那么“原创”会被插入到第二位，“AI生成”则变成第三位。
+  // 目前我没有处理这种边界情况
+  static unshiftTag(tags: string[], tag: string) {
+    if (!tags.includes(tag)) {
+      // 查找 R-18 或 R-18G 标签的位置
+      const r18Index = tags.findIndex(
+        (t) => t.toLowerCase() === 'r-18' || t.toLowerCase() === 'r-18g'
+      )
+      // 如果找到了 R-18 或 R-18G 标签，则把新标签插入到它后面
+      if (r18Index !== -1) {
+        tags.splice(r18Index + 1, 0, tag)
+      } else {
+        // 否则插入到最前面
+        tags.unshift(tag)
+      }
+    }
+
+    return tags
   }
 
   static checkUserLogin() {
@@ -914,6 +1108,33 @@ class Tools {
 
   static getAITypeText(number: number) {
     return this.AIType[number]
+  }
+
+  /**移除 Pixiv 高级会员的广告横幅元素 */
+  static hiddenPremiumAD() {
+    const ads = document.querySelectorAll(
+      'a[href^="/premium/lead/lp/"]'
+    ) as NodeListOf<HTMLAnchorElement>
+    ads.forEach((ad) => (ad.style.display = 'none'))
+  }
+
+  /** 当添加收藏失败且状态码为 403 时，显示特定提示。由于有多个模块需要使用此提示，所以提取出来 */
+  static addBookmark403Error() {
+    return `${lang.transl('_添加收藏失败')}, ${lang.transl('_状态码')}: 403 Forbidden
+            <br>
+            ${lang.transl('_你的账号可能已经被限制无法添加收藏')}`
+  }
+
+  /** 把 xRestrict 的值转换为对应的字符串 */
+  static getAgeLimit(xRestrict: 0 | 1 | 2, handleAll = true) {
+    switch (xRestrict) {
+      case 0:
+        return handleAll ? 'All Ages' : ''
+      case 1:
+        return 'R-18'
+      case 2:
+        return 'R-18G'
+    }
   }
 }
 

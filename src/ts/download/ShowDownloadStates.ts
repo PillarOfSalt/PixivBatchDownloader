@@ -1,6 +1,6 @@
 import { Colors } from '../Colors'
 import { EVT } from '../EVT'
-import { lang } from '../Lang'
+import { lang } from '../Language'
 
 // 显示下载状态
 class ShowDownloadStates {
@@ -27,11 +27,11 @@ class ShowDownloadStates {
     })
 
     window.addEventListener(EVT.list.downloadPause, () => {
-      this.setText('_已暂停', '#f00')
+      this.setText('_已暂停', Colors.textWarning)
     })
 
     window.addEventListener(EVT.list.downloadStop, () => {
-      this.setText('_已停止', '#f00')
+      this.setText('_已停止', Colors.textError)
     })
 
     window.addEventListener(EVT.list.downloadComplete, () => {

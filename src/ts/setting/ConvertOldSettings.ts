@@ -35,6 +35,9 @@ class ConvertOldSettings {
       '3': 'zh-tw',
       '4': 'ko',
     },
+    ugoiraSaveAs: {
+      png: 'apng',
+    },
   }
 
   // 传递需要转换的设置的键值

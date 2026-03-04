@@ -60,6 +60,16 @@ class WorkToolBar {
       return
     }
 
+    // 查找“批量投稿至X”的按钮，如果有这个按钮，则说明是自己的作品页面
+    const batchPostBtn = this.toolbar.querySelector(
+      '.gtm-manga-replytree-modal-open'
+    )
+    if (batchPostBtn) {
+      // 是自己的作品页面，不处理
+      window.clearInterval(this.timer)
+      return
+    }
+
     // 获取心形收藏按钮的 div
     const total = this.toolbar.childElementCount
     // 心形收藏按钮是倒数第二个（从左往右数第二个）
@@ -89,18 +99,18 @@ class WorkToolBar {
 
     // 在移动端不要给工具栏添加自定义 class 名，因为切换页面时元素没重新生成，class 还在
 
+    // toolbar 里有 4 个按钮，但是有 5 个 div，第 3 个是空 div，不知道为什么
     const divs = toolbar.querySelectorAll('div')
-    if (divs.length !== 4) {
+    if (divs.length !== 5) {
       return
     }
     // 只在正常模式下（有 4 个按钮）时工作
     // 如果在自己的作品页面里，就只有 1 个分享按钮
 
-    // 获取心形收藏按钮的 div
-    this.pixivBMKDiv = divs[1]
-
-    // 获取点赞按钮
+    // 点赞按钮的 div
     this.likeBtn = divs[0]
+    // 心形收藏按钮的 div
+    this.pixivBMKDiv = divs[1]
 
     // 全部获取完毕
     if (this.pixivBMKDiv && this.likeBtn) {

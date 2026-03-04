@@ -1,8 +1,7 @@
 // 初始化小说搜索页
 import { InitPageBase } from '../crawl/InitPageBase'
 import { Colors } from '../Colors'
-import { lang } from '../Lang'
-import { options } from '../setting/Options'
+import { lang } from '../Language'
 import { SearchOption } from '../crawl/CrawlArgument'
 import { filter, FilterOption } from '../filter/Filter'
 import { API } from '../API'
@@ -20,6 +19,16 @@ import { Config } from '../Config'
 import { setTimeoutWorker } from '../SetTimeoutWorker'
 import { vipSearchOptimize } from '../crawl/VipSearchOptimize'
 import { settings } from '../setting/Settings'
+import { pageType } from '../PageType'
+import '../filter/FilterSearchResults'
+
+// 用于测试抓取的 URL：
+// 搜索小说作品的两种 URL：
+// https://www.pixiv.net/tags/%E5%8E%9F%E7%A5%9E/novels?order=date&mode=r18&scd=2025-02-10&ecd=2026-02-10&wlt=20000&wgt=79999&ai_type=1
+// https://www.pixiv.net/search?q=%E5%8E%9F%E7%A5%9E&s_mode=tag&type=novel&order=date&mode=r18&scd=2025-02-10&ecd=2026-02-10&wlt=20000&wgt=79999&ai_type=1
+// 在测试小说时，不必启用“整合相同系列的作品”和“整合相同作者的作品”，因为这可能导致页面上显示的数量少于实际小说的数量
+// 例如 3 个小说可能只显示为 2 个项目
+// 下载器抓取的是单篇小说，所以数量会是 3 个，与页面上显示的 2 个不符。所以为了测试更直观，便于对比，就不启用这两个条件了
 
 class InitSearchNovelPage extends InitPageBase {
   constructor() {
@@ -29,17 +38,14 @@ class InitSearchNovelPage extends InitPageBase {
     crawlTagList.init()
   }
 
-  private readonly worksWrapSelector = 'section>div ul'
-
   private option: SearchOption = {}
   private readonly worksNoPerPage = 30 // 每个页面有多少个作品
   private needCrawlPageCount = 0 // 一共有有多少个列表页面
   private sendCrawlTaskCount = 0 // 已经抓取了多少个列表页面
   private readonly allOption = [
+    'q',
     'order',
     'type',
-    'wlt',
-    'wgt',
     'hlt',
     'hgt',
     'ratio',
@@ -50,11 +56,41 @@ class InitSearchNovelPage extends InitPageBase {
     'ecd',
     'blt',
     'bgt',
-    'tlt',
-    'tgt',
-    'original_only',
-    'work_lang',
     'ai_type',
+
+    // 作品的语言，只有小说搜索页面有这个参数
+    'work_lang',
+
+    // 字数需要大于这个值，只有小说搜索页面有这个参数
+    'tlt',
+    // 字数需要小于这个值，只有小说搜索页面有这个参数
+    'tgt',
+
+    // 单词数量需要大于这个值
+    // 在搜索图像作品时也有这个参数，但含义不同
+    'wlt',
+    // 单词数量需要小于这个值，只有小说搜索页面有这个参数
+    'wgt',
+
+    // 阅读时间需要大于这个值，只有小说搜索页面有这个参数
+    'rlt',
+    // 阅读时间需要小于这个值，只有小说搜索页面有这个参数
+    'rgt',
+
+    // 是否仅限原创作品
+    // 无此参数则不限制
+    // 1  只显示原创作品
+    'original_only',
+
+    // 是否整合相同系列的作品
+    // 无此参数则不整合
+    // 1  整合相同系列的作品
+    'gs',
+
+    // 是否仅限支持单词置换的作品
+    // 无此参数则不限制
+    // 1  只显示支持单词置换的作品
+    'replaceable_only',
   ]
 
   protected addCrawlBtns() {
@@ -62,7 +98,8 @@ class InitSearchNovelPage extends InitPageBase {
       'crawlBtns',
       Colors.bgBlue,
       '_开始抓取',
-      '_默认下载多页'
+      '_默认下载多页',
+      'startCrawling'
     ).addEventListener('click', () => {
       this.readyCrawl()
     })
@@ -72,12 +109,15 @@ class InitSearchNovelPage extends InitPageBase {
   }
 
   private getWorksWrap() {
-    const test = document.querySelectorAll(this.worksWrapSelector)
+    // 2026-02-10 改版前的选择器
+    let test = document.querySelectorAll('section>div ul')
     if (test.length > 0) {
-      // 小说页面用这个选择器，只匹配到了一个 ul
       return test[test.length - 1] as HTMLUListElement
     }
-    return null
+
+    // 2026-02-10 改版后的选择器
+    let test2 = document.querySelector('div[data-ga4-label="works_content"]')
+    return test2 || null
   }
 
   protected addAnyElement() {
@@ -85,32 +125,32 @@ class InitSearchNovelPage extends InitPageBase {
     const bookmarkAllBtn = Tools.addBtn(
       'otherBtns',
       Colors.bgGreen,
-      '_收藏本页面的所有作品'
+      '_收藏本页面的所有作品',
+      '',
+      'bookmarkAllWorksOnPage'
     )
     const bookmarkAll = new BookmarkAllWorks(bookmarkAllBtn)
 
     bookmarkAllBtn.addEventListener('click', () => {
       const listWrap = this.getWorksWrap()
       if (listWrap) {
-        const list = document.querySelectorAll(
+        // 选择作品列表
+        // 2026-02-10 改版前的选择器
+        let list = document.querySelectorAll(
           'section>div ul>li'
         ) as NodeListOf<HTMLLIElement>
+
+        // 2026-02-10 改版后的选择器
+        if (list.length === 0) {
+          list = document.querySelectorAll(
+            'div[data-ga4-label="works_content"]>div:last-child>div'
+          )
+        }
+
         if (list.length > 0) {
           bookmarkAll.sendWorkList(list, 'novels')
         }
       }
-    })
-  }
-
-  protected setFormOption() {
-    const isPremium = Tools.isPremium()
-    // 个数/页数选项的提示
-    options.setWantPageTip({
-      text: '_抓取多少页面',
-      tip: '_从本页开始下载提示',
-      rangTip: `1 - ${isPremium ? 5000 : 1000}`,
-      min: 1,
-      max: isPremium ? 5000 : 1000,
     })
   }
 
@@ -177,15 +217,19 @@ class InitSearchNovelPage extends InitPageBase {
   }
 
   protected getWantPage() {
-    this.crawlNumber = this.checkWantPageInput(
-      lang.transl('_从本页开始下载x页'),
-      lang.transl('_下载所有页面')
-    )
+    this.crawlNumber = settings.crawlNumber[pageType.type].value
+    if (this.crawlNumber === -1) {
+      log.warning(lang.transl('_下载所有页面'))
+    } else {
+      log.warning(
+        lang.transl('_从本页开始下载x页', this.crawlNumber.toString())
+      )
+    }
   }
 
   // 获取搜索页的数据。因为有多处使用，所以进行了封装
   private async getSearchData(p: number) {
-    let data = await API.getNovelSearchData(store.tag, p, this.option)
+    let data = await API.getSearchData(store.tag, 'novels', p, this.option)
     return data.body.novel
   }
 
@@ -200,6 +244,23 @@ class InitSearchNovelPage extends InitPageBase {
       let value = Utils.getURLSearchField(location.href, param)
       if (value !== '') {
         this.option[param] = value
+      }
+
+      if (param === 's_mode') {
+        // url 里的 s_mode 并不是请求时的 s_mode
+        // 我也不知道为什么，反正 Pixiv 官方的请求是这样的。我只能照着做
+        if (value === 'tag') {
+          this.option[param] = 's_tag_only'
+        }
+        if (value === 'tag_tc') {
+          this.option[param] = 's_tag'
+        }
+        if (value === 'text') {
+          this.option[param] = 's_tc'
+        }
+        if (value === '') {
+          this.option[param] = 's_tag_full'
+        }
       }
     })
 
@@ -238,12 +299,11 @@ class InitSearchNovelPage extends InitPageBase {
     window.setTimeout(() => {
       this.getIdList(p)
     }, Config.retryTime)
-    // 限制时间大约是 3 分钟，这里为了保险起见，设置了更大的延迟时间。
   }
 
   private tipEmptyResult = Utils.debounce(() => {
     if (!settings.slowCrawl) {
-      log.error(lang.transl('_提示启用减慢抓取速度功能'))
+      log.log(lang.transl('_提示启用减慢抓取速度功能'))
     }
     log.error(lang.transl('_抓取被限制时返回空结果的提示'))
   }, 1000)
@@ -316,9 +376,9 @@ class InitSearchNovelPage extends InitPageBase {
     // 因为如果作品被过滤掉了，就不会储存在 store.idList 里
     if (this.listPageFinished > 0 && this.listPageFinished % 10 === 0) {
       if (data.data.length > 0) {
-        console.log(
-          `已抓取 ${this.listPageFinished} 页，检查最后一个作品的收藏数量`
-        )
+        // console.log(
+        //   `已抓取 ${this.listPageFinished} 页，检查最后一个作品的收藏数量`
+        // )
         const lastWork = data.data[data.data.length - 1]
         const check = await vipSearchOptimize.checkWork(lastWork.id, 'novels')
         if (check) {
@@ -330,13 +390,15 @@ class InitSearchNovelPage extends InitPageBase {
     }
 
     log.log(
-      lang.transl(
-        '_列表页抓取进度2',
-        this.listPageFinished.toString(),
-        this.needCrawlPageCount.toString()
-      ),
+      '➡️' +
+        lang.transl(
+          '_列表页抓取进度2',
+          this.listPageFinished.toString(),
+          this.needCrawlPageCount.toString()
+        ),
       1,
-      false
+      false,
+      'crawlNovelSearchPageListPage'
     )
 
     if (this.sendCrawlTaskCount + 1 <= this.needCrawlPageCount) {

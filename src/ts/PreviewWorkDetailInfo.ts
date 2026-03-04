@@ -3,8 +3,10 @@ import { theme } from './Theme'
 import { settings } from './setting/Settings'
 import { ArtworkData } from './crawl/CrawlResult'
 import { Tools } from './Tools'
-import { CopyToClipboard } from './CopyToClipboard'
 import { Utils } from './utils/Utils'
+import { lang } from './Language'
+import { toast } from './Toast'
+import { copyWorkInfo } from './CopyWorkInfo'
 
 // 预览作品的详细信息
 // 这个模块由 PreviewWork 提供作品数据，这样可以避免一些重复代码
@@ -111,7 +113,7 @@ class PreviewWorkDetailInfo {
       `)
     }
 
-    // 生成 R-18(G) 和 AI 标记
+    // 生成 R-18(G) 标记
     let r18HTML = ''
     if (workData.body.xRestrict === 1) {
       r18HTML = '<span class="r18">R-18</span>'
@@ -119,37 +121,70 @@ class PreviewWorkDetailInfo {
       r18HTML = '<span class="r18">R-18G</span>'
     }
 
+    // 判断是不是 AI 生成的作品
     let aiHTML = ''
-    if (
-      workData.body.aiType === 2 ||
-      workData.body.tags.tags.some((tag) => tag.tag === 'AI生成')
-    ) {
+    const tagsWithTransl: string[] = Tools.extractTags(workData, 'both')
+    let aiType = workData.body.aiType
+    if (aiType !== 2) {
+      if (Tools.checkAIFromTags(tagsWithTransl)) {
+        aiType = 2
+      }
+    }
+
+    if (aiType === 2) {
       aiHTML = '<span class="ai">AI</span>'
+    }
+
+    // 添加“原创”标记
+    let originHTML = ''
+    if (workData.body.isOriginal) {
+      const originalMark = Tools.getOriginalMark()
+      originHTML = `<span class="origin">${originalMark}</span>`
     }
 
     wrap.innerHTML = `
         <div class="content">
-        <p class="flags">${r18HTML} ${aiHTML}</p>
-        <p class="title">${workData.body.title}</p>
-        <p class="desc">${workData.body.description}</p>
-        <p class="tags">${tagsHTML.join('')}</p>
-        <p class="size">${workData.body.width} x ${workData.body.height}</p>
-        <p class="bmk">${bmkHTML.join('')}</p>
-        <p class="date">${new Date(
-          workData.body.uploadDate
-        ).toLocaleString()}</p>
-        <p class="buttons"><button class="textButton" id="copyTXT">Copy TXT</button> <button class="textButton" id="copyJSON">Copy JSON</button></p>
+          <p class="flags">${r18HTML} ${aiHTML} ${originHTML}</p>
+          <p class="title">${workData.body.title}</p>
+          <p class="desc">${workData.body.description}</p>
+          <p class="tags">${tagsHTML.join('')}</p>
+          <p class="size">${workData.body.width} x ${workData.body.height}</p>
+          <p class="bmk">${bmkHTML.join('')}</p>
+          <p class="date">${new Date(
+            workData.body.uploadDate
+          ).toLocaleString()}</p>
+          <p class="buttons">
+            <button class="textButton" id="copyTXT">Copy TXT</button>
+            <button class="textButton" id="copyJSON">Copy JSON</button>
+            <button class="textButton" id="copyURL">Copy URL</button>
+            <button class="textButton" id="copyBtn">
+              <svg class="icon" aria-hidden="true">
+                <use xlink:href="#icon-copy"></use>
+              </svg>
+            </button>
+          </p>
         </div>
       `
 
     // 按钮功能
-    const copyTXT = wrap.querySelector('#copyTXT') as HTMLButtonElement
-    copyTXT.addEventListener('click', () => {
-      this.copyTXT(workData)
+    wrap.querySelector('#copyTXT')!.addEventListener('click', () => {
+      this.copyTXT(workData, aiType)
     })
-    const copyJSON = wrap.querySelector('#copyJSON') as HTMLButtonElement
-    copyJSON.addEventListener('click', () => {
+
+    wrap.querySelector('#copyJSON')!.addEventListener('click', () => {
       this.copyJSON(workData)
+    })
+
+    wrap.querySelector('#copyURL')!.addEventListener('click', () => {
+      const url = `https://www.pixiv.net/i/${workData.body.id}`
+      this.copy(url)
+    })
+
+    wrap.querySelector('#copyBtn')!.addEventListener('click', () => {
+      copyWorkInfo.receive({
+        id: workData.body.id,
+        type: 'illusts',
+      })
     })
 
     // 取消超链接的跳转确认，也就是把跳转链接替换为真正的链接
@@ -161,7 +196,7 @@ class PreviewWorkDetailInfo {
     }
 
     // 设置样式
-    wrap.classList.add('xz_PreviewWorkDetailPanel')
+    wrap.classList.add('xz_PreviewWorkDetailPanel', 'beautify_scrollbar')
     wrap.style.width = settings.PreviewDetailInfoWidth + 'px'
 
     wrap.addEventListener('click', () => {
@@ -234,20 +269,16 @@ class PreviewWorkDetailInfo {
     })
   }
 
-  private copyTXT(workData: ArtworkData) {
+  private copyTXT(workData: ArtworkData, aiType: 0 | 1 | 2) {
     // 组织输出的内容
-    const tags = Tools.extractTags(workData).map((tag) => `#${tag}`)
-    const checkAITag = workData.body.tags.tags.some(
-      (tag) => tag.tag === 'AI生成'
-    )
-
     const array: string[] = []
     const body = workData.body
+    const tags = Tools.extractTags(workData).map((tag) => `#${tag}`)
     array.push(`ID\n${body.id}`)
     array.push(`URL\nhttps://www.pixiv.net/artworks/${body.id}`)
     array.push(`Original\n${body.urls?.original}`)
     array.push(`xRestrict\n${Tools.getXRestrictText(body.xRestrict)}`)
-    array.push(`AI\n${Tools.getAITypeText(checkAITag ? 2 : body.aiType)}`)
+    array.push(`AI\n${Tools.getAITypeText(aiType)}`)
     array.push(`User\n${body.userName}`)
     array.push(`UserID\n${body.userId}`)
     array.push(`Title\n${body.title}`)
@@ -264,12 +295,21 @@ class PreviewWorkDetailInfo {
     array.push(`Date\n${new Date(body.uploadDate).toLocaleString()}`)
 
     const text = array.join('\n\n')
-    CopyToClipboard.setClipboard(text)
+    this.copy(text)
   }
 
   private copyJSON(workData: ArtworkData) {
     const text = JSON.stringify(workData, null, 2)
-    CopyToClipboard.setClipboard(text)
+    this.copy(text)
+  }
+
+  private async copy(text: string) {
+    const copied = await Utils.writeClipboardText(text)
+    if (copied) {
+      toast.success(lang.transl('_已复制到剪贴板'))
+    } else {
+      toast.error(lang.transl('_写入剪贴板失败'))
+    }
   }
 }
 

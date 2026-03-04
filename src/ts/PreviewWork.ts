@@ -9,7 +9,7 @@ import { states } from './store/States'
 import { Utils } from './utils/Utils'
 import { PreviewUgoira } from './PreviewUgoira'
 import { toast } from './Toast'
-import { lang } from './Lang'
+import { lang } from './Language'
 import { Colors } from './Colors'
 import { DateFormat } from './utils/DateFormat'
 import { showHelp } from './ShowHelp'
@@ -19,6 +19,9 @@ import { previewWorkDetailInfo } from './PreviewWorkDetailInfo'
 import { Tools } from './Tools'
 import { bookmark } from './Bookmark'
 import { pageType } from './PageType'
+import { copyWorkInfo } from './CopyWorkInfo'
+import { displayThumbnailListOnMultiImageWorkPage } from './pageFunciton/DisplayThumbnailListOnMultiImageWorkPage'
+import { logErrorStatus } from './crawl/LogErrorStatus'
 
 // 鼠标停留在作品的缩略图上时，预览作品
 class PreviewWork {
@@ -39,7 +42,7 @@ class PreviewWork {
 
   private tipId = 'previewWorkTip'
   private tip!: HTMLElement
-  private readonly tipHeight = 22
+  private readonly tipHeight = 23
 
   // 保存当前鼠标经过的缩略图的数据
   private workId = ''
@@ -85,6 +88,9 @@ class PreviewWork {
 
   private _show = false
 
+  /**是否处于准备显示预览图的阶段。当准备显示时为 true，已显示、以及隐藏预览图时为 fasle */
+  private isReadyShow = false
+
   private get show() {
     return this._show
   }
@@ -107,13 +113,15 @@ class PreviewWork {
         // 显示作品的详细信息
         if (
           settings.PreviewWorkDetailInfo &&
-          Config.checkImageViewerLI(this.workEL) === false
+          displayThumbnailListOnMultiImageWorkPage.checkLI(this.workEL) ===
+            false
         ) {
           EVT.fire('showPreviewWorkDetailPanel', this.workData)
         }
 
         this.sendURLs()
 
+        this.isReadyShow = false
         this._show = true
         showOriginSizeImage.hide()
         this.showWrap()
@@ -131,6 +139,7 @@ class PreviewWork {
       window.clearTimeout(this.delayShowTimer)
       window.clearTimeout(this.delayHiddenTimer)
       this.overThumb = false
+      this.isReadyShow = false
       this._show = false
       this.dontShowAgain = false
       this.wrap.style.display = 'none'
@@ -173,7 +182,7 @@ class PreviewWork {
       }
 
       // 在在多图作品的缩略图列表上触发时，使用 data-index 属性的值作为 index
-      if (Config.checkImageViewerLI(el)) {
+      if (displayThumbnailListOnMultiImageWorkPage.checkLI(el)) {
         const _index = Number.parseInt(el.dataset!.index!)
         this.index = _index
       }
@@ -195,6 +204,7 @@ class PreviewWork {
     })
 
     artworkThumbnail.onLeave((el: HTMLElement) => {
+      this.isReadyShow = false
       // 当鼠标离开作品缩略图时，有可能是因为显示了作品详细信息的面板。此时让预览图保持显示
       if (previewWorkDetailInfo.show) {
         return
@@ -214,16 +224,17 @@ class PreviewWork {
       }
     })
 
+    // 绑定按键
     window.addEventListener(
       'keydown',
       (ev) => {
         // 当用户按下 Ctrl 时，不启用下载器的热键，以避免快捷键冲突或重复生效
         // 例如，预览作品时按 C 可以下载，但是当用户按下 Ctrl + C 时其实是想复制，此时不应该下载
-        if (ev.ctrlKey) {
+        if (ev.ctrlKey || ev.shiftKey || ev.metaKey) {
           return
         }
 
-        // 当用户按下 Alt 时，只响应 P 键
+        // 当用户按下 Alt 时
         if (ev.altKey) {
           // 可以使用 Alt + P 快捷键来启用/禁用此功能
           if (ev.code === 'KeyP') {
@@ -236,13 +247,29 @@ class PreviewWork {
               const msg = 'Preview works - Off'
               toast.warning(msg)
             }
-          } else {
+            return
+          } else if (ev.code === 'KeyC') {
+            // 使用快捷键 Alt + C 调用复制功能
+            if (this.show && this.workData) {
+              //在预览时按下的话需要阻止传播，因为在作品页面里也监听了 Alt + C，需要避免多次执行。
+              ev.stopPropagation()
+              ev.preventDefault()
+              copyWorkInfo.receive(
+                {
+                  type: 'illusts',
+                  id: this.workData!.body.id,
+                },
+                this.index
+              )
+            }
             return
           }
         }
 
         // 使用 Esc 键关闭当前预览
         if (ev.code === 'Escape' && this.show) {
+          ev.stopPropagation()
+          ev.preventDefault()
           this.show = false
           // 并且不再显示这个作品的预览图，否则如果鼠标依然位于这个作品上，就会马上再次显示缩略图了
           // 当鼠标移出这个作品的缩略图之后会取消此限制
@@ -314,7 +341,10 @@ class PreviewWork {
           }
         }
       },
-      true
+      {
+        capture: true,
+        passive: false,
+      }
     )
 
     const hiddenEvtList = [
@@ -333,6 +363,14 @@ class PreviewWork {
       window.setTimeout(() => {
         this.dontShowAfterPageSwitch = false
       }, 500)
+    })
+
+    logErrorStatus.listen((status: number, url: string) => {
+      if (this.isReadyShow && status === 429 && url.includes(this.workId)) {
+        toast.error(lang.transl('_状态码429的提示'), {
+          position: 'mouse',
+        })
+      }
     })
 
     // 当作品的详情面板隐藏时，鼠标位置可能在作品缩略图之外。所以此时需要检测鼠标位置，决定是否需要隐藏预览图
@@ -485,35 +523,30 @@ class PreviewWork {
 
     if (status === 200) {
       toast.success(lang.transl('_已收藏'))
-    }
 
-    if (status === 403) {
-      toast.error(`403 Forbidden, ${lang.transl('_你的账号已经被Pixiv限制')}`)
-      return
-    }
+      // 将作品缩略图上的收藏按钮变成红色
+      const allSVG = this.workEL!.querySelectorAll('svg')
+      if (allSVG.length > 0) {
+        // 如果有多个 svg，一般最后一个是收藏按钮
+        let useSVG = allSVG[allSVG.length - 1]
 
-    // 将作品缩略图上的收藏按钮变成红色
-    const allSVG = this.workEL!.querySelectorAll('svg')
-    if (allSVG.length > 0) {
-      // 如果有多个 svg，一般最后一个是收藏按钮
-      let useSVG = allSVG[allSVG.length - 1]
+        // 但有些特殊情况是第一个
+        if (pageType.type === pageType.list.Request) {
+          useSVG = allSVG[0]
+        }
 
-      // 但有些特殊情况是第一个
-      if (pageType.type === pageType.list.Request) {
-        useSVG = allSVG[0]
-      }
+        // 多图作品里可能有两个 svg，一个是右上角的图片数量，一个是收藏按钮
+        // 区别是收藏按钮在 button 元素里
+        const btnSVG = this.workEL!.querySelector('button svg') as SVGSVGElement
+        if (btnSVG) {
+          useSVG = btnSVG
+        }
 
-      // 多图作品里可能有两个 svg，一个是右上角的图片数量，一个是收藏按钮
-      // 区别是收藏按钮在 button 元素里
-      const btnSVG = this.workEL!.querySelector('button svg') as SVGSVGElement
-      if (btnSVG) {
-        useSVG = btnSVG
-      }
-
-      useSVG.style.color = 'rgb(255, 64, 96)'
-      const allPath = useSVG.querySelectorAll('path')
-      for (const path of allPath) {
-        path.style.fill = 'currentcolor'
+        useSVG.style.color = 'rgb(255, 64, 96)'
+        const allPath = useSVG.querySelectorAll('path')
+        for (const path of allPath) {
+          path.style.fill = 'currentcolor'
+        }
       }
     }
 
@@ -525,6 +558,7 @@ class PreviewWork {
   }
 
   private readyShow() {
+    this.isReadyShow = true
     this.delayShowTimer = window.setTimeout(async () => {
       if (!cacheWorkData.has(this.workId)) {
         // 如果在缓存中没有找到这个作品的数据，则发起请求
@@ -532,9 +566,6 @@ class PreviewWork {
           const data = await API.getArtworkData(this.workId)
           cacheWorkData.set(data)
         } catch (error: Error | any) {
-          if (error.status && error.status === 429) {
-            toast.error('429 Error')
-          }
           this.show = false
           return
         }
@@ -729,23 +760,44 @@ class PreviewWork {
       const text: string[] = []
       const body = this.workData.body
 
-      if (
-        body.aiType === 2 ||
-        body.tags.tags.some((tag) => tag.tag === 'AI生成')
-      ) {
-        text.push('AI')
+      if (body.pageCount > 1) {
+        text.push(`<span class="index flag">
+          <svg viewBox="0 0 10 10" width="12" height="12"><path fill="currentColor" d="M8,3 C8.55228475,3 9,3.44771525 9,4 L9,9 C9,9.55228475 8.55228475,10 8,10 L3,10
+    C2.44771525,10 2,9.55228475 2,9 L6,9 C7.1045695,9 8,8.1045695 8,7 L8,3 Z M1,1 L6,1
+    C6.55228475,1 7,1.44771525 7,2 L7,7 C7,7.55228475 6.55228475,8 6,8 L1,8 C0.44771525,8
+    0,7.55228475 0,7 L0,2 C0,1.44771525 0.44771525,1 1,1 Z"></path></svg>
+    ${this.index + 1}/${body.pageCount}
+    </span>`)
       }
 
-      if (body.pageCount > 1) {
-        text.push(`${this.index + 1}/${body.pageCount}`)
+      // 判断是不是 AI 生成的作品
+      const tagsWithTransl: string[] = Tools.extractTags(this.workData, 'both')
+      let aiType = body.aiType
+      if (aiType !== 2) {
+        if (Tools.checkAIFromTags(tagsWithTransl)) {
+          aiType = 2
+        }
+      }
+
+      if (aiType === 2) {
+        text.push('<span class="ai flag">AI</span>')
+      }
+
+      if (body.xRestrict === 1) {
+        text.push('<span class="r18 flag">R-18</span>')
+      } else if (body.xRestrict === 2) {
+        text.push('<span class="r18 flag">R-18G</span>')
       }
 
       // 显示收藏数量
-      text.push(`${body.bookmarkCount.toString()} <svg viewBox="0 0 12 12" width="12" height="12"><path fill="currentColor" d="
+      text.push(`<span class="bmk flag">
+        <svg viewBox="0 0 12 12" width="12" height="12"><path fill="currentColor" d="
       M9,0.75 C10.6568542,0.75 12,2.09314575 12,3.75 C12,6.68851315 10.0811423,9.22726429 6.24342696,11.3662534
       L6.24342863,11.3662564 C6.09210392,11.4505987 5.90790324,11.4505988 5.75657851,11.3662565
       C1.9188595,9.22726671 0,6.68851455 0,3.75 C1.1324993e-16,2.09314575 1.34314575,0.75 3,0.75
-      C4.12649824,0.75 5.33911281,1.60202454 6,2.66822994 C6.66088719,1.60202454 7.87350176,0.75 9,0.75 Z"></path></svg>`)
+      C4.12649824,0.75 5.33911281,1.60202454 6,2.66822994 C6.66088719,1.60202454 7.87350176,0.75 9,0.75 Z"></path></svg>
+      ${body.bookmarkCount.toString()}
+      </span>`)
 
       // 加载原图时，可以获取到每张图片的真实尺寸
       if (settings.prevWorkSize === 'original') {
@@ -757,14 +809,18 @@ class PreviewWork {
       }
       text.push(DateFormat.format(body.createDate, 'YYYY/MM/DD'))
       text.push(body.title)
-      text.push(body.description)
+      // 把简介里的换行替换成空格。因为简介区域只有一行，为了尽量多的显示简介文本，所以取消换行
+      text.push(body.description.replaceAll('<br />', '&nbsp;'))
 
       this.tip.innerHTML = text
         .map((str) => {
+          if (str.startsWith('<span')) {
+            return str
+          }
           return `<span>${str}</span>`
         })
         .join('')
-      this.tip.style.display = 'block'
+      this.tip.style.display = 'flex'
     } else {
       this.tip.style.display = 'none'
     }

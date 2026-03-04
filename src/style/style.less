@@ -35,7 +35,7 @@
 }
 
 .green {
-  color: #14ad27;
+  color: #00bd17;
 }
 
 .icon {
@@ -44,6 +44,10 @@
   vertical-align: initial;
   fill: currentColor;
   overflow: hidden;
+}
+
+.mr0 {
+  margin-right: 0 !important;
 }
 
 .beautify_scrollbar {
@@ -105,6 +109,47 @@ main section nav[style] {
   cursor: pointer;
   text-decoration: none;
   display: block;
+}
+
+#copyBtnOnWorkPage {
+  padding: 0;
+  padding-top: 3px;
+  margin-right: 16px;
+  display: inline-flex;
+  align-items: center;
+  cursor: pointer;
+  background: none;
+  border: none;
+
+  &:hover,
+  &:active {
+    color: @themeBlue;
+  }
+
+  svg {
+    width: 1.6em;
+    height: 1.6em;
+  }
+}
+
+body.mobile {
+  #copyBtnOnWorkPage {
+    padding: 0;
+    margin: 6px 4px 4px;
+    display: inline-flex;
+    align-items: center;
+    cursor: pointer;
+
+    &:hover,
+    &:active {
+      color: @themeBlue;
+    }
+
+    svg {
+      width: 2.1em;
+      height: 2.1em;
+    }
+  }
 }
 
 html[data-xzpagetheme='white'] #quickBookmarkEl {
@@ -219,18 +264,62 @@ html[data-xzpagetheme='dark'] #quickBookmarkEl {
 #previewWorkTip {
   background-color: @beautifyBlue;
   color: #fff;
-  height: 22px;
-  // 因为摘要信息上面有 border，两者在视觉上是连在一起的，所以 line-height 要小一些，使文字向上提一些
-  line-height: 21px;
-  overflow: hidden;
+  height: 23px;
+  line-height: 20px;
   display: none;
+  // display: flex;
+  align-items: center;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  font-family: @pixivFontFamily;
 
   span {
+    display: inline-flex;
+    align-items: center;
+    height: 22px;
+    max-height: 22px;
     font-size: 14px;
     padding: 0 5px;
+    white-space: nowrap;
+    overflow: hidden;
+    flex-shrink: 0;
+    flex-grow: 0;
+
+    &:last-child {
+      // 允许最后一项缩小尺寸（简介文本）
+      flex-shrink: 1;
+    }
+
+    &.flag {
+      align-items: center;
+      height: 18px;
+      line-height: 18px;
+      font-weight: bold;
+      font-size: 12px;
+      border-radius: 4px;
+      margin: 0 3px;
+
+      svg {
+        padding-right: 4px;
+      }
+    }
+
+    &.r18 {
+      background: @colorR18;
+    }
+
+    &.ai {
+      background: @colorAi;
+    }
+
+    &.index {
+      background: #0d5ee9;
+    }
+
+    &.bmk {
+      background: #eda200;
+    }
 
     a {
       color: #fff;
@@ -258,35 +347,9 @@ html[data-xzpagetheme='dark'] #quickBookmarkEl {
   }
 }
 
-#zoomBtnOnThumb {
+.btnOnThumb {
   position: absolute;
-  z-index: 99998;
-  display: none;
-  left: 0px;
-  top: 0px;
-  width: 32px;
-  height: 32px;
-  border: none;
-  padding: 0;
-  text-align: center;
-  background-color: @beautifyBlue;
-  border-radius: 4px;
-  color: #fff;
-  display: none;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  overflow: hidden;
-  font-size: 22px;
-
-  &:hover {
-    opacity: 0.8;
-  }
-}
-
-.downloadBtnOnThumb {
-  position: absolute;
-  // 如果使用 fixed，将导致页面滚动时按钮停留在原地，这是不好的体验
+  // 如果使用 fixed，将导致页面滚动时按钮停留在原地，造成不好的体验，所以使用 absolute
   z-index: 99999;
   display: none;
   left: 0px;
@@ -308,6 +371,10 @@ html[data-xzpagetheme='dark'] #quickBookmarkEl {
 
   &:hover {
     opacity: 0.8;
+  }
+
+  &#zoomBtnOnThumb {
+    z-index: 99998;
   }
 }
 

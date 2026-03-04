@@ -96,6 +96,22 @@ class ShowLargerThumbnails {
 
     // 首页
     if (pageType.type === pageType.list.Home) {
+      {
+        // 在插画首页，查找作品板块的父元素
+        const sectionList = document.querySelectorAll('div>section')
+        sectionList.forEach((section) => {
+          // 第一个选择器判断排行榜下方的多个作品列表区域，第二个下载器判断排行榜区域
+          if (
+            section.querySelector('ul li[size="1"] div[width]') ||
+            section.querySelector(
+              'ul div a.gtm-toppage-thumbnail-illustration-ranking-daily'
+            )
+          ) {
+            section.parentElement!.classList.add('homeWorksSectionParent')
+          }
+        })
+      }
+
       const sectionList = document.querySelectorAll('section')
       if (sectionList.length === 0) {
         return
@@ -105,6 +121,9 @@ class ShowLargerThumbnails {
         // 查找 精选新作 和 已关注用户的作品 的 section 父元素
         if (sectionList[1].querySelector('ul div')) {
           sectionList[1].classList.add('homeFriendsNewWorks')
+          sectionList[1].parentElement!.classList.add(
+            'homeFriendsNewWorksParent'
+          )
           this.needFind = false
         }
       }
@@ -177,7 +196,7 @@ class ShowLargerThumbnails {
         const useUL = ul[ul.length - 1]
         const div = useUL.closest('div')
         if (div) {
-          div.classList.add('width94vw')
+          div.classList.add('width92vw')
           this.needFind = false
         }
       }
@@ -190,25 +209,32 @@ class ShowLargerThumbnails {
       if (li) {
         const target = li.parentElement!.parentElement!
         if (target.nodeName === 'DIV') {
-          target.classList.add('userHomeWrapper')
+          // 这是 ul 元素的父元素
+          target.classList.add('userHomeULParent')
+          // 这是作品列表和其上“插画·漫画”横幅的共同父元素
+          const parent = target.parentElement!.parentElement!
+          parent.classList.add('userHomeWrapper')
           this.needFind = false
         }
       }
 
       // 查找精选作品
-      const allFeatured = document.querySelectorAll('div[width="288"]')
-      for (const div of allFeatured) {
-        // 每个精选作品的内容分为左右两部分，左侧是缩略图，右侧是作品信息
-        // 区分左右，并查找其父元素 li
-        div.parentElement!.classList.add('featuredLeft')
-        div.parentElement!.nextElementSibling!.classList.add('featuredRight')
-        const li = div.closest('li')
-        if (li) {
-          li.classList.add('featuredLI')
-          // 查找有很大 padding 的父元素
-          li.closest('div')!.classList.add('featuredPadding')
+      const allFeaturedArtwork = document.querySelectorAll('div[width="288"]')
+      const allFeaturedNovel = document.querySelectorAll('div[width="206"]')
+      ;[allFeaturedArtwork, allFeaturedNovel].forEach((list) => {
+        for (const div of list) {
+          // 每个精选作品的内容分为左右两部分，左侧是缩略图，右侧是作品信息
+          // 区分左右，并查找其父元素 li
+          div.parentElement!.classList.add('featuredLeft')
+          div.parentElement!.nextElementSibling!.classList.add('featuredRight')
+          const li = div.closest('li')
+          if (li) {
+            li.classList.add('featuredLI')
+            // 查找有很大 padding 的父元素
+            li.closest('div')!.classList.add('featuredPadding')
+          }
         }
-      }
+      })
 
       // 查找作品列表上方的 tag 列表
       const a = document.querySelector('a[status="normal"]')
@@ -221,6 +247,13 @@ class ShowLargerThumbnails {
 
     //  收藏页面
     if (pageType.type === pageType.list.Bookmark) {
+      // 查找每个作品列表区域的共同父元素
+      // 也就是 div>section 的 div，然后给它添加自定义 className
+      const sectionList = document.querySelectorAll('div>section')
+      if (sectionList.length > 0) {
+        sectionList[0].parentElement!.classList.add('sectionParentDiv')
+      }
+
       // 查找宽度为 1224px 的父元素
       // 首先查找 li[size="1"]，并且需要判断里面的链接是 illust，而非 novel
       const li = document.querySelector('li[size="1"]')
@@ -243,13 +276,35 @@ class ShowLargerThumbnails {
 
     //  搜索页面、Tag 页面
     if (pageType.type === pageType.list.ArtworkSearch) {
+      // 查找每个作品列表区域的共同父元素
+      // 也就是 div>section 的 div，然后给它添加自定义 className
+      const sectionList = document.querySelectorAll('div>section')
+      if (sectionList.length > 0) {
+        sectionList[0].parentElement!.classList.add('sectionParentDiv')
+      }
+
       // 查找作品列表的 UL 元素，将其从 grid 布局改为 flex 布局
       // 在 tag 首页，可能有两个作品缩略图区域，第一个是“热门作品”，第二个才是普通的作品列表
       const ulList = document.querySelectorAll('section ul')
       for (const ul of ulList) {
         if (ul.querySelector('div[width="184"]')) {
           ul.classList.add('worksUL')
+          ul.parentElement!.classList.add('worksULParent')
           this.needFind = false
+        }
+      }
+
+      // 2026-02-10 改版后，搜索页的作品列表已经不使用 ul li 元素了，改为下面的查找方式
+      const workList = document.querySelectorAll(
+        'div[data-ga4-label="works_content"] div.col-span-2'
+      )
+      if (workList.length > 0) {
+        if (workList[0].querySelector('div[width="184"]')) {
+          workList[0].parentElement!.classList.add('worksUL')
+          // 这个 worksULParent 也就是 div[data-ga4-label="works_content"]
+          workList[0].parentElement!.parentElement!.classList.add(
+            'worksULParent'
+          )
         }
       }
     }
@@ -257,6 +312,13 @@ class ShowLargerThumbnails {
     // 已关注用户的新作品
     if (pageType.type === pageType.list.NewArtworkBookmark) {
       if (window.location.pathname.includes('/novel') === false) {
+        // 查找每个作品列表区域的共同父元素
+        // 也就是 div>section 的 div，然后给它添加自定义 className
+        const sectionList = document.querySelectorAll('div>section')
+        if (sectionList.length > 0) {
+          sectionList[0].parentElement!.classList.add('sectionParentDiv')
+        }
+
         // 查找 UL 的父级 div（宽度为 1224px 的那个）
         const li = document.querySelector('li[size="1"]')
         if (li) {
@@ -279,6 +341,7 @@ class ShowLargerThumbnails {
       for (const ul of ulList) {
         if (ul.querySelector('div[type="illust"]')) {
           ul.classList.add('worksUL')
+          ul.parentElement!.classList.add('worksWrapper')
           this.needFind = false
         }
       }
@@ -313,6 +376,16 @@ class ShowLargerThumbnails {
       }
     }
 
+    // 关注页面
+    if (pageType.type === pageType.list.Following) {
+      // 查找每个作品列表区域的共同父元素
+      // 也就是 div>section 的 div，然后给它添加自定义 className
+      const sectionList = document.querySelectorAll('div>section')
+      if (sectionList.length > 0) {
+        sectionList[0].parentElement!.classList.add('sectionParentDiv')
+      }
+    }
+
     // 约稿页面，分为数种子页面
     if (pageType.type === pageType.list.Request) {
       // 正在接稿中用户的作品
@@ -335,9 +408,10 @@ class ShowLargerThumbnails {
         // 查找容器元素
         // ul 的祖父元素是个 div，这个 div 里面的 3 个div 都是容器元素
         const grandfather = ul.parentElement!.parentElement!
-        grandfather.childNodes.forEach((div) =>
-          (div as HTMLDivElement).classList.add('worksWrapper')
-        )
+        grandfather.childNodes.forEach((div: any) => {
+          div.classList.add('worksWrapper')
+          div.parentElement!.classList.add('width92vw')
+        })
 
         this.needFind = false
       } else {
@@ -350,6 +424,26 @@ class ShowLargerThumbnails {
           }
         }
       }
+    }
+
+    // 图像作品的排行榜页面
+    // https://www.pixiv.net/ranking.php?mode=daily&content=illust
+    if (pageType.type === pageType.list.ArtworkRanking) {
+      // 查找作品列表，li id="1" 这样的元素就是作品缩略图，其 id 就是排名
+      const thumbList = document.querySelectorAll('ol li[id]')
+      if (thumbList.length > 0) {
+        thumbList[0].parentElement!.classList.add('worksUL', 'width92vw')
+        thumbList[0].parentElement!.parentElement!.classList.add('width92vw')
+      }
+
+      // 查找以 adsdk 开头的广告元素，隐藏它以及父元素
+      const ads = document.querySelectorAll(
+        'div[id^="adsdk"]'
+      ) as NodeListOf<HTMLElement>
+      ads.forEach((ad) => {
+        ad.style.display = 'none'
+        ad.parentElement!.style.display = 'none'
+      })
     }
   }
 }

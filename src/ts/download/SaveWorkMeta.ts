@@ -1,4 +1,3 @@
-import browser from 'webextension-polyfill'
 import { EVT } from '../EVT'
 import { store } from '../store/Store'
 import { DonwloadSuccessData, SendToBackEndData } from './DownloadType'
@@ -8,8 +7,9 @@ import { Result } from '../store/StoreType'
 import { settings } from '../setting/Settings'
 import { Utils } from '../utils/Utils'
 import { Tools } from '../Tools'
-import { Config } from '../Config'
+import { SendDownload } from './SendDownload'
 
+// 为每个作品创建一个单独的文件，保存这个作品的元数据
 class SaveWorkMeta {
   constructor() {
     this.bindEvents()
@@ -173,6 +173,10 @@ class SaveWorkMeta {
       return
     }
 
+    if (!settings.saveMetaFormatTXT && !settings.saveMetaFormatJSON) {
+      return
+    }
+
     if (this.savedIds.includes(id)) {
       return
     }
@@ -190,8 +194,42 @@ class SaveWorkMeta {
     if (this.checkNeedSave(data.type) === false) {
       return
     }
+    this.savedIds.push(id)
 
-    // Add file content
+    // 生成文件名
+    // 元数据文件需要和它对应的图片/小说文件的路径相同，文件名相似，这样它们才能在资源管理器里排在一起，便于查看
+
+    // 生成这个数据的路径和文件名
+    const _fileName = fileName.createFileName(data)
+    // 取出后缀名之前的部分
+    // const index = _fileName.lastIndexOf('.')
+    // let part1 = _fileName.substring(0, index)
+    let part1 = _fileName.replace(data.id, id)
+
+    if (settings.zeroPadding) {
+      // 把 id 字符串换成数字 id，这是为了去除 id 后面可能存在的序号，如 p0
+      // 但如果用户启用了在序号前面填充 0，则不替换 id，因为文件名里的 id 后面可能带多个 0，如 p000，用 idNum 去替换的话替换不了后面两个 0
+      const index = id.lastIndexOf('p')
+      const num = id.substring(index + 1)
+      part1 = _fileName.replace(
+        /p\d+\./,
+        `p${num.padStart(settings.zeroPaddingLength, '0')}.`
+      )
+
+      // part1 = part1.replace(data.id, data.idNum.toString())
+    }
+    // 拼接出元数据文件的文件名，不包含后缀名
+    // const metaFileName = `${part1}-meta`
+    const metaFileName = `${part1}`
+
+    this.saveTXT(data, metaFileName)
+    this.saveJSON(data, metaFileName)
+  }
+
+  private async saveTXT(data: Result, metaFileName: string) {
+    if (!settings.saveMetaFormatTXT) {
+      return
+    }
 
     const fileContent: string[] = []
     const desc = Utils.htmlToText(Tools.replaceATag(data.description))
@@ -237,58 +275,21 @@ class SaveWorkMeta {
 */
     // Generate files
 
+    // 保存文件
     const blob = new Blob(fileContent, {
       type: 'application/x-trash',
     })
+    SendDownload.noReply(blob, metaFileName + '.xmp')
+  }
 
-    // Generate file name
-    // The metadata file needs to have the same path and similar file names as its corresponding picture/novel file, so that they can be arranged together in the Explorer for easy viewing.
-
-    // The path and file name to generate this data
-
-    const _fileName = fileName.createFileName(data)
-    // Take out the part before the suffix name
-
-    // const index = _fileName.lastIndexOf('.')
-    let part1 = _fileName.replace(data.id, id)
-
-    if (settings.zeroPadding) {
-      // Swap the id string with a number id, which is to remove the possible sequence numbers after id, such as p0
-      // However, if the user enables 0 in front of the sequence number, the id will not be replaced, because the id in the file name may have multiple 0s followed by p000. If you replace it with idNum, the next two 0s cannot be replaced.
-      const index = id.lastIndexOf('p')
-      const num = id.substring(index + 1)
-      part1 = _fileName.replace(
-        /p\d+\./,
-        `p${num.padStart(settings.zeroPaddingLength, '0')}.`
-      )
-
-      // part1 = part1.replace(data.id, data.idNum.toString())
-    }
-    // Splice out the file name of the metadata file
-
-    const metaFileName = `${part1}.xmp`
-    // const metaFileName = `${_fileName}.xmp`
-
-    // 发送下载请求
-
-    let dataURL: string | undefined = undefined
-    if (Config.sendDataURL) {
-      dataURL = await Utils.blobToDataURL(blob)
+  private async saveJSON(data: Result, metaFileName: string) {
+    if (!settings.saveMetaFormatJSON) {
+      return
     }
 
-    // 不检查下载状态，默认下载成功
-    const sendData: SendToBackEndData = {
-      msg: 'save_description_file',
-      fileName: metaFileName,
-      id: 'fake',
-      taskBatch: -1,
-      blobURL: URL.createObjectURL(blob),
-      blob: Config.sendBlob ? blob : undefined,
-      dataURL,
-    }
-    browser.runtime.sendMessage(sendData)
-
-    this.savedIds.push(id)
+    // 保存文件
+    const blob = Utils.json2Blob(data)
+    SendDownload.noReply(blob, metaFileName + '.json')
   }
 }
 

@@ -1,8 +1,7 @@
-// 下载文件，然后发送给浏览器进行保存
 import browser from 'webextension-polyfill'
 import { EVT } from '../EVT'
 import { log } from '../Log'
-import { lang } from '../Lang'
+import { lang } from '../Language'
 import { fileName } from '../FileName'
 import { convertUgoira } from '../ConvertUgoira/ConvertUgoira'
 import {
@@ -14,14 +13,12 @@ import { progressBar } from './ProgressBar'
 import { filter } from '../filter/Filter'
 import { downloadRecord } from './DownloadRecord'
 import { settings } from '../setting/Settings'
-import { MakeNovelFile } from './MakeNovelFile'
+import { makeNovelFile } from './MakeNovelFile'
 import { Utils } from '../utils/Utils'
 import { Config } from '../Config'
 import { msgBox } from '../MsgBox'
 import { states } from '../store/States'
 import { Tools } from '../Tools'
-import { downloadNovelEmbeddedImage } from './DownloadNovelEmbeddedImage'
-import { downloadNovelCover } from './DownloadNovelCover'
 import { setTimeoutWorker } from '../SetTimeoutWorker'
 import { downloadStates } from './DownloadStates'
 import { downloadInterval } from './DownloadInterval'
@@ -150,9 +147,10 @@ class Download {
       Tools.createWorkLink(fileId),
       status.toString()
     )
-    // 404, 500 Error, skip, no attempt to download this file (because the downloadError event was not triggered, so the download will not be retryed)
+    // 发生 404 500 错误时跳过这个作品。因为没有触发 downloadError 事件，所以不会重试下载它
     if (status === 404 || status === 500) {
       log.error(errorMsg)
+      log.error(lang.transl('_下载器不会再重试下载它'))
       return this.skipDownload({
         id: fileId,
         reason: status.toString() as '404' | '500',
@@ -176,7 +174,8 @@ class Download {
       }
     }
 
-    // Other status codes, skip this task temporarily, but will try to download it again in the end
+    // 其他状态码，暂时跳过这个任务，但最后还是会尝试重新下载它
+    log.log(lang.transl('_下载器会暂时跳过它'))
     this.error = true
     EVT.fire('downloadError', fileId)
   }
@@ -194,33 +193,19 @@ class Download {
     if (arg.result.type === 3) {
       // novel
       if (arg.result.novelMeta) {
-        // Download the cover image of the novel
-        if (
-          settings.downloadNovelCoverImage &&
-          arg.result.novelMeta?.coverUrl
-        ) {
-          await downloadInterval.wait()
-          await downloadNovelCover.download(
-            arg.result.novelMeta.coverUrl,
-            _fileName,
-            'downloadNovel'
-          )
-        }
-
-        // Generate novel files
-        // In addition, if the novel is saved in EPUB format, the embedded pictures will be downloaded in this step
-        // And the cover image of the novel will be downloaded again (because it needs to be embedded in the EPUB file)
-        let blob: Blob = await MakeNovelFile.make(arg.result.novelMeta)
-        url = URL.createObjectURL(blob)
-
-        // If the novel is saved in TXT format, download the embedded image here
-        if (settings.novelSaveAs === 'txt') {
-          await downloadNovelEmbeddedImage.TXT(
-            arg.result.novelMeta.id,
-            arg.result.novelMeta.content,
-            arg.result.novelMeta.embeddedImages,
+        // 生成小说文件
+        if (settings.novelSaveAs === 'epub') {
+          const blob = await makeNovelFile.makeEPUB(
+            arg.result.novelMeta,
             _fileName
           )
+          url = URL.createObjectURL(blob)
+        } else {
+          const blob = await makeNovelFile.makeTXT(
+            arg.result.novelMeta,
+            _fileName
+          )
+          url = URL.createObjectURL(blob)
         }
       } else {
         throw new Error('Not found novelMeta')
@@ -284,9 +269,9 @@ class Download {
 
       // The status code is wrong, enter the retry process
       if (xhr.status !== 200) {
-        // The normal downloaded status code is 200
-        // Store retry timestamps and other information
-        this.retryInterval.push(new Date().getTime() - this.lastRequestTime)
+        // 正常下载完毕的状态码是 200
+        // 储存重试的时间戳等信息
+        this.retryInterval.push(Date.now() - this.lastRequestTime)
 
         progressBar.errorColor(this.progressBarIndex, true)
         this.retry++
@@ -301,8 +286,8 @@ class Download {
       } else {
         // The status code is normal
         progressBar.errorColor(this.progressBarIndex, false)
-        // The situation where animations need to be converted
-        const convertExt = ['webm', 'gif', 'png']
+        // 需要转换动图的情况
+        const convertExt = ['webm', 'gif', 'apng']
         const ext = settings.ugoiraSaveAs
         if (
           convertExt.includes(ext) &&
@@ -327,7 +312,7 @@ class Download {
               )
             }
 
-            if (ext === 'png') {
+            if (ext === 'apng') {
               file = await convertUgoira.apng(
                 file,
                 arg.result.ugoiraInfo,
@@ -383,8 +368,8 @@ class Download {
       file = null as any
     })
 
-    this.lastRequestTime = new Date().getTime()
-    // Timeout is not set, the default value is 0, and it will not time out
+    this.lastRequestTime = Date.now()
+    // 没有设置 timeout，默认值是 0，不会超时
     xhr.send()
   }
 
@@ -437,6 +422,20 @@ class Download {
       blobURL,
       blob: Config.sendBlob ? blob : undefined,
       dataURL,
+    }
+
+    // 使用 a.download 来下载文件时，不调用 downloads API
+    if (settings.rememberTheLastSaveLocation) {
+      // 移除文件夹，只保留文件名部分，因为这种方式不支持建立文件夹
+      // 路径符号 / 会被浏览器处理成 _，例如：
+      // pixiv/mojo-94576902/136825223_p0-藤田ことね🎃.png 会变成：
+      // pixiv_mojo-94576902_136825223_p0-藤田ことね🎃.png
+      // 所以我只保留了文件名部分
+      const lastName = fileName.split('/').pop()
+      Utils.downloadFile(blobURL, lastName!)
+      sendData.msg = 'save_work_file_a_download'
+      browser.runtime.sendMessage(sendData)
+      return
     }
 
     try {

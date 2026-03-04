@@ -5,7 +5,7 @@ import { toWebM } from './ToWebM'
 import { toGIF } from './ToGIF'
 import { toAPNG } from './ToAPNG'
 import { msgBox } from '../MsgBox'
-import { lang } from '../Lang'
+import { lang } from '../Language'
 import { Tools } from '../Tools'
 import { log } from '../Log'
 
@@ -110,7 +110,7 @@ class ConvertUgoira {
     if (delayTooLarge) {
       const msg = lang.transl(
         '_动图不能转换为WEBM视频的提示',
-        Tools.createWorkLink(id)
+        Tools.createWorkLink(id, '', 'artwork')
       )
       msgBox.warning(msg)
       log.warning(msg)

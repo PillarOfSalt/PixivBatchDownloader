@@ -21,7 +21,19 @@ class NovelThumbnail extends WorkThumbnail {
         'section ul>li',
         'div._ranking-item',
         'div[size="496"]',
+        'div[size="392"]',
         'div[data-ga4-entity-id^="novel"]>div:nth-child(2)',
+        // 在搜索页面里，小说的选择器可能是这个
+        'div[data-ga4-label="works_content"]>div>div',
+        // 鼠标放到作者名字上，显示作者的 3 个作品预览图，其中小说的选择器是这个
+        'div[type="novel"][size]',
+        // 在比赛页面使用
+        '.thumbnail-container',
+        '.image-container',
+        // 在用户主页的“小说”分类的“精选”部分使用
+        'ul ul li>div',
+        'ol li[id]',
+        '.gtm-illust-recommend-zone li',
         'li',
       ]
     }
@@ -47,15 +59,17 @@ class NovelThumbnail extends WorkThumbnail {
         if (
           pageType.type === pageType.list.UserHome &&
           selector !== 'section ul>li' &&
-          selector !== 'li[size="1"]>div'
+          selector !== 'li[size="1"]>div' &&
+          selector !== 'ul ul li>div'
         ) {
           continue
         }
 
-        // 在小说排行榜里只使用 div._ranking-item
+        // 在小说排行榜里只使用
         if (
           pageType.type === pageType.list.NovelRanking &&
-          selector !== 'div._ranking-item'
+          selector !== 'div._ranking-item' &&
+          selector !== 'ol li[id]'
         ) {
           continue
         }
@@ -77,13 +91,50 @@ class NovelThumbnail extends WorkThumbnail {
         }
 
         if (
+          selector === '.gtm-illust-recommend-zone li' &&
+          pageType.type !== pageType.list.Discover
+        ) {
+          continue
+        }
+
+        if (
           selector === 'div[data-ga4-entity-id^="novel"]>div:nth-child(2)' &&
           pageType.type !== pageType.list.Home
         ) {
           continue
         }
-      }
 
+        if (
+          selector === 'div[data-ga4-label="works_content"]>div>div' &&
+          pageType.type !== pageType.list.NovelSearch
+        ) {
+          continue
+        }
+
+        if (
+          (selector === '.thumbnail-container' ||
+            selector === '.image-container') &&
+          pageType.type !== pageType.list.Contest
+        ) {
+          continue
+        }
+
+        if (
+          selector === 'div[size="392"]' &&
+          pageType.type !== pageType.list.SearchUsers
+        ) {
+          continue
+        }
+
+        // 这个选择器只在约稿-小说页面里使用：
+        // https://www.pixiv.net/request/creators/works/novels
+        if (
+          selector === 'li' &&
+          window.location.pathname !== '/request/creators/works/novels'
+        ) {
+          continue
+        }
+      }
       let elements: HTMLElement[] | NodeListOf<Element> =
         parent.querySelectorAll(selector)
       // 处理特殊的动态添加的元素
@@ -98,15 +149,33 @@ class NovelThumbnail extends WorkThumbnail {
       }
 
       for (const el of elements) {
+        // if (selector === 'li') {
+        //   console.log('li')
+        //   console.log(el)
+        // }
+
         const id = Tools.findWorkIdFromElement(el as HTMLElement, 'novels')
         // 在移动端页面里，此时获取的可能是 '0'
         // 依然绑定
         if (Config.mobile) {
           this.bindEvents(el as HTMLElement, id)
         } else {
-          // 在桌面版页面里，只有查找到作品 id 时才会执行回调函数
+          // 在桌面版页面里，只有查找到 id 时才会执行回调函数
+          // 分为两种情况：单篇小说 和 系列小说
+          // 实际上这两种情况经常同时发生，例如在单篇小说的缩略图里附带了它的系列页面链接
+          // 优先查找单篇小说的链接，因为很多时候是在展示单篇小说，至于它的系列页面链接只是附带的
           if (id) {
+            // 单篇小说
             this.bindEvents(el as HTMLElement, id)
+          } else {
+            // 如果找不到作品 id，可能这个元素是系列小说，此时尝试查找系列 id
+            const seriesId = Tools.findSeriesIdFromElement(
+              el as HTMLElement,
+              'novels'
+            )
+            if (seriesId) {
+              this.bindEvents(el as HTMLElement, seriesId, true)
+            }
           }
         }
       }

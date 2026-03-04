@@ -1,4 +1,3 @@
-import browser from 'webextension-polyfill'
 import { EVT } from '../EVT'
 import { store } from '../store/Store'
 import { DonwloadSuccessData, SendToBackEndData } from './DownloadType'
@@ -7,10 +6,10 @@ import { Result } from '../store/StoreType'
 import { settings } from '../setting/Settings'
 import { Utils } from '../utils/Utils'
 import { Tools } from '../Tools'
-import { lang } from '../Lang'
+import { lang } from '../Language'
 import { log } from '../Log'
 import { toast } from '../Toast'
-import { Config } from '../Config'
+import { SendDownload } from './SendDownload'
 
 // 为每个作品创建一个 txt 文件，保存这个作品的元数据
 class SaveWorkDescription {
@@ -76,23 +75,7 @@ class SaveWorkDescription {
       hasLink ? '-links' : ''
     }.txt`
 
-    let dataURL: string | undefined = undefined
-    if (Config.sendDataURL) {
-      dataURL = await Utils.blobToDataURL(blob)
-    }
-
-    // 不检查下载状态，默认下载成功
-    const sendData: SendToBackEndData = {
-      msg: 'save_description_file',
-      fileName: fileName,
-      id: 'fake',
-      taskBatch: -1,
-      blobURL: URL.createObjectURL(blob),
-      blob: Config.sendBlob ? blob : undefined,
-      dataURL,
-    }
-    browser.runtime.sendMessage(sendData)
-
+    await SendDownload.noReply(blob, fileName)
     this.savedIds.push(id)
   }
 
@@ -237,24 +220,8 @@ class SaveWorkDescription {
       }
     }
 
-    let dataURL: string | undefined = undefined
-    if (Config.sendDataURL) {
-      dataURL = await Utils.blobToDataURL(blob)
-    }
-
-    // 不检查下载状态，默认下载成功
-    const sendData: SendToBackEndData = {
-      msg: 'save_description_file',
-      fileName: txtName,
-      id: 'fake',
-      taskBatch: -1,
-      blobURL: URL.createObjectURL(blob),
-      blob: Config.sendBlob ? blob : undefined,
-      dataURL,
-    }
-    browser.runtime.sendMessage(sendData)
-
-    const msg = `✓ ${lang.transl('_保存作品的简介2')}: ${lang.transl(
+    await SendDownload.noReply(blob, txtName)
+    const msg = `✅${lang.transl('_保存作品的简介2')}: ${lang.transl(
       '_汇总到一个文件'
     )}`
     log.success(msg)

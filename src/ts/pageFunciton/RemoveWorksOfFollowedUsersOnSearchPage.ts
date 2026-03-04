@@ -1,18 +1,16 @@
 import { settings } from '../setting/Settings'
 import { pageType } from '../PageType'
-import { store } from '../store/Store'
-import { lang } from '../Lang'
+import { lang } from '../Language'
 import { log } from '../Log'
 import { EVT } from '../EVT'
+import { followingList } from '../FollowingList'
+import { toast } from '../Toast'
 
 // 在搜索页面里移除已关注用户的作品
 class RemoveWorksOfFollowedUsersOnSearchPage {
   constructor() {
-    // 初始化时，页面上的作品元素尚未生成，所以不必使用 findAllWorks 方法
-    // this.findAllWorks()
-
-    this.createObserver(document.body)
     this.bindEvents()
+    this.createObserver(document.body)
   }
 
   private bindEvents() {
@@ -22,29 +20,38 @@ class RemoveWorksOfFollowedUsersOnSearchPage {
         data.name === 'removeWorksOfFollowedUsersOnSearchPage' &&
         data.value
       ) {
-        this.findAllWorks()
+        // 查找当前页面上的作品
+        this.findWorks(document.body)
       }
     })
 
     window.addEventListener(EVT.list.followingUsersChange, () => {
-      this.findAllWorks()
+      this.findWorks(document.body)
     })
 
     window.addEventListener(EVT.list.pageSwitch, () => {
-      this.showTip = false
+      this.showTip = true
+      // 在来回切换页面时（例如之前进入了第 2 页，之后又从其他页面回到第 2 页），有时候 pixiv 的代码会报错：
+      // Cannot remove a child from a different parent，并导致下载器没能成功移除该页面上应该移除的作品元素
+      // 等待一段时间之后再重试，就可以正常移除元素了
+      window.setTimeout(() => {
+        this.findWorks(document.body)
+      }, 1000)
     })
   }
 
-  private showTip = false
+  private showTip = true
 
-  // 在每个页面上只显示一次提示
+  // 在每个页面上只显示一次提示，切换页面后可以再次显示
   private showTipOnce() {
-    if (this.showTip) {
+    if (!this.showTip) {
       return
     }
 
-    this.showTip = true
-    log.warning(lang.transl('_在搜索页面里移除已关注用户的作品'))
+    this.showTip = false
+    const tip = lang.transl('_在搜索页面里移除已关注用户的作品')
+    log.warning(tip)
+    toast.warning(tip)
   }
 
   private get enable() {
@@ -60,10 +67,6 @@ class RemoveWorksOfFollowedUsersOnSearchPage {
   // 例如在搜索页面里，一个作品元素分为 3 个部分：1. 缩略图 2. 标题 3. 作者（用户名）
   // ArtworkThumbnail 获取的元素只是缩略图，不是完整的作品元素，所以不能用它来移除作品元素。而且缩略图里面有时可能没有用户信息，无法判断用户是否已关注。
   private check(el: HTMLElement) {
-    if (!this.enable) {
-      return
-    }
-
     const userLink = el.querySelector('a[href*=users]') as HTMLAnchorElement
     if (!userLink) {
       return
@@ -71,56 +74,57 @@ class RemoveWorksOfFollowedUsersOnSearchPage {
 
     // https://www.pixiv.net/users/9212166
     const userID = userLink.href.match(/\d+/)
-    if (userID && store.followingUserIDList.includes(userID[0])) {
+    if (userID && followingList.following.includes(userID[0])) {
       el.remove()
+      // console.log('remove', el)
       this.showTipOnce()
     }
   }
 
-  // 搜索页面里的插画作品选择器
-  private readonly worksSelector = 'section ul li'
-
-  /**检查当前页面上的作品元素 */
-  private findAllWorks() {
-    if (!this.enable) {
+  private findWorks(el: Element) {
+    if (
+      !this.enable ||
+      el.nodeType !== 1 ||
+      (el.nodeName !== 'BODY' && el.nodeName !== 'DIV' && el.nodeName !== 'LI')
+    ) {
       return
     }
 
-    const allLI = document.body.querySelectorAll(
-      this.worksSelector
-    ) as NodeListOf<HTMLLIElement>
-    for (const LI of allLI) {
-      this.check(LI)
+    // 新版搜索页面里的插画作品选择器
+    let works = el.querySelectorAll('div.col-span-2')
+    if (works.length === 0) {
+      // 新版搜索页面里的插画作品选择器
+      works = el.querySelectorAll('div[width="184"]')
+    }
+    if (works.length === 0) {
+      // 旧版搜索页面里的插画作品选择器
+      works = el.querySelectorAll('section ul li')
+    }
+
+    // 如果这些选择器都无效，需要考虑元素本身就是作品元素的情况，所以它没有符合要求的子元素
+    if (works.length === 0) {
+      // console.log(el)
+      return this.check(el as HTMLElement)
+    }
+
+    for (const el of works) {
+      this.check(el as HTMLElement)
     }
   }
 
   /**使用监视器，检查未来添加的作品元素 */
   protected createObserver(target: HTMLElement) {
     const observer = new MutationObserver((records) => {
-      if (!this.enable) {
-        return
-      }
-
       for (const record of records) {
         if (record.addedNodes.length > 0) {
           // 遍历被添加的元素，检查其中的作品元素
           for (const newEl of record.addedNodes) {
-            if (newEl.nodeType !== 1) {
-              continue
-            }
-
-            if (newEl.nodeName === 'LI') {
-              this.check(newEl as HTMLElement)
-            } else {
-              const allLI = (newEl as HTMLElement).querySelectorAll('li')
-              for (const LI of allLI) {
-                this.check(LI)
-              }
-            }
+            this.findWorks(newEl as Element)
           }
         }
       }
     })
+
     observer.observe(target, {
       childList: true,
       subtree: true,

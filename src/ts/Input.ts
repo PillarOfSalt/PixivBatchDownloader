@@ -1,5 +1,5 @@
 import { Config } from './Config'
-import { lang } from './Lang'
+import { lang } from './Language'
 import { theme } from './Theme'
 
 interface Option {
@@ -45,12 +45,12 @@ class Input {
   private init(option?: Option) {
     const _option = Object.assign(this.defultOption, option || {})
     this.value = _option.value!
-    this.id = `input` + new Date().getTime()
+    this.id = `input` + Date.now()
     this.create(_option)
   }
 
-  private create(option: Option) {
-    const example = `<div class="XZInputWrap ?:mobile" id="input1691811888224">
+  private readonly wrapHtmlExample = `
+  <div class="XZInputWrap ?:mobile" id="input1691811888224">
     <p class="XZInputInstruction">instruction</p>
     <div class="XZInputContainer">
       <input type="text" class="XZInput" value="default" placeholder="tip" />
@@ -60,6 +60,7 @@ class Input {
     </div>
   </div>`
 
+  private create(option: Option) {
     const wrap = document.createElement('div')
     wrap.classList.add('XZInputWrap')
     Config.mobile && wrap.classList.add('mobile')

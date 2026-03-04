@@ -1,5 +1,5 @@
 import { EVT } from './EVT'
-import { lang } from './Lang'
+import { lang } from './Language'
 import { msgBox } from './MsgBox'
 import { setSetting, settings } from './setting/Settings'
 
@@ -8,10 +8,7 @@ class RequestSponsorship {
     window.addEventListener(EVT.list.settingInitialized, () => {
       // 赋予初始值
       if (settings.requestSponsorshipTime === 0) {
-        setSetting(
-          'requestSponsorshipTime',
-          new Date().getTime() + this.interval
-        )
+        setSetting('requestSponsorshipTime', Date.now() + this.interval)
       }
 
       window.setTimeout(() => {
@@ -24,7 +21,7 @@ class RequestSponsorship {
   private readonly interval = 2592000000
 
   private check() {
-    const now = new Date().getTime()
+    const now = Date.now()
     if (now >= settings.requestSponsorshipTime) {
       msgBox.once('request sponsorship', lang.transl('_赞助方式提示'), 'show', {
         title: lang.transl('_赞助我'),

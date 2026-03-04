@@ -1,14 +1,11 @@
 //初始化小说系列作品页面
 import { InitPageBase } from '../crawl/InitPageBase'
 import { Colors } from '../Colors'
-import { options } from '../setting/Options'
 import { store } from '../store/Store'
 import { Tools } from '../Tools'
 import { API } from '../API'
-import { states } from '../store/States'
-import { settings } from '../setting/Settings'
-import { getNovelGlossarys } from './GetNovelGlossarys'
 import { Utils } from '../utils/Utils'
+import { MergeNovel } from '../download/MergeNovel'
 
 class InitNovelSeriesPage extends InitPageBase {
   constructor() {
@@ -16,52 +13,48 @@ class InitNovelSeriesPage extends InitPageBase {
     this.init()
   }
 
-  private seriesId: string = ''
   private readonly limit = 30
   private last = 0
 
   protected addCrawlBtns() {
-    Tools.addBtn('crawlBtns', Colors.bgBlue, '_抓取系列小说').addEventListener(
-      'click',
-      () => {
-        this.readyCrawl()
-      }
-    )
+    Tools.addBtn(
+      'crawlBtns',
+      Colors.bgBlue,
+      '_抓取系列小说',
+      '',
+      'crawlSeriesNovel'
+    ).addEventListener('click', () => {
+      this.readyCrawl()
+    })
   }
 
   protected addAnyElement() {
-    Tools.addBtn('crawlBtns', Colors.bgBlue, '_合并系列小说').addEventListener(
-      'click',
-      () => {
-        states.mergeNovel = true
-        this.readyCrawl()
+    Tools.addBtn(
+      'crawlBtns',
+      Colors.bgBlue,
+      '_合并系列小说',
+      '',
+      'mergeSeriesNovel'
+    ).addEventListener('click', () => {
+      const seriesId = Utils.getURLPathField(window.location.pathname, 'series')
+      let seriseTitle = ''
+      // 尝试获取系列标题
+      const meta = document.querySelector('meta[property="twitter:title"]')
+      if (meta) {
+        seriseTitle = meta.getAttribute('content') || ''
       }
-    )
+      new MergeNovel().merge(seriesId, seriseTitle)
+    })
   }
-
-  protected initAny() {}
-
-  protected setFormOption() {
-    // 隐藏“个数/页数”选项
-    options.hideOption([1])
-  }
-
-  protected getWantPage() {}
 
   protected async nextStep() {
-    this.seriesId = Utils.getURLPathField(window.location.pathname, 'series')
-
-    if (states.mergeNovel && settings.saveNovelMeta) {
-      const data = await getNovelGlossarys.getGlossarys(this.seriesId)
-      store.novelSeriesGlossary = getNovelGlossarys.storeGlossaryText(data)
-    }
-
     this.getIdList()
   }
 
   protected async getIdList() {
+    const seriesId = Utils.getURLPathField(window.location.pathname, 'series')
     const seriesData = await API.getNovelSeriesContent(
-      this.seriesId,
+      seriesId,
       this.limit,
       this.last,
       'asc'
@@ -86,8 +79,8 @@ class InitNovelSeriesPage extends InitPageBase {
   }
 
   protected resetGetIdListStatus() {
-    this.seriesId = ''
     this.last = 0
   }
 }
+
 export { InitNovelSeriesPage }

@@ -1,23 +1,19 @@
 import { EVT } from './EVT'
 import { Colors } from './Colors'
 import { theme } from './Theme'
-import { lang } from './Lang'
+import { lang } from './Language'
 import { bg } from './BG'
 import { Config } from './Config'
 
 interface MsgOptional {
-  btn?: string
   title?: string
   color?: string
   hiddenBtn?: boolean
+  btn?: string
 }
 
-export interface Msg {
-  title?: string
+export type Msg = MsgOptional & {
   msg: string
-  btn?: string
-  color?: string
-  hiddenBtn?: boolean
 }
 
 // 简单的消息框
@@ -120,7 +116,7 @@ class MsgBox {
     }
 
     wrap.innerHTML = `
-        <div class="title" ${colorStyle}>${data.title || Config.appName}</div>
+        <div class="title">${data.title || Config.appName}</div>
         <div class="content beautify_scrollbar" ${colorStyle}>${data.msg}</div>
         ${
           data.hiddenBtn

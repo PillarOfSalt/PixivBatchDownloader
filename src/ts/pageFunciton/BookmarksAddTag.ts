@@ -8,7 +8,7 @@ import {
 } from '../crawl/CrawlResult'
 import { toast } from '../Toast'
 import { bookmark } from '../Bookmark'
-import { lang } from '../Lang'
+import { lang } from '../Language'
 import { msgBox } from '../MsgBox'
 
 // 给收藏页面里的未分类作品批量添加 tag
@@ -141,7 +141,8 @@ class BookmarksAddTag {
     )
     if (status === 403) {
       this.textSpan.textContent = `× Permission denied`
-      msgBox.error(lang.transl('_你的账号已经被Pixiv限制'))
+      const msg = Tools.addBookmark403Error()
+      msgBox.error(msg)
       return
     }
 

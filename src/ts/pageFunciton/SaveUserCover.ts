@@ -1,4 +1,4 @@
-import { lang } from '../Lang'
+import { lang } from '../Language'
 import { API } from '../API'
 import { log } from '../Log'
 import { Tools } from '../Tools'
@@ -45,8 +45,8 @@ class SaveUserCover {
     const name = `${userProfile.body.name}_${userId}_cover.${ext}`
     Utils.downloadFile(url, name)
 
-    const msg = '✓ ' + lang.transl('_保存用户封面')
-    log.success(msg)
+    const msg = lang.transl('_保存用户封面')
+    log.success('✅' + msg)
     toast.success(msg)
     EVT.fire('closeCenterPanel')
   }

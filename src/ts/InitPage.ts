@@ -5,7 +5,6 @@ import { pageType } from './PageType'
 import { InitHomePage } from './crawlMixedPage/InitHomePage'
 import { InitArtworkPage } from './crawlArtworkPage/InitArtworkPage'
 import { InitUserPage } from './crawlMixedPage/InitUserPage'
-import { InitBookmarkLegacyPage } from './crawlMixedPage/InitBookmarkLegacyPage'
 import { InitBookmarkPage } from './crawlMixedPage/InitBookmarkPage'
 import { InitSearchArtworkPage } from './crawlArtworkPage/InitSearchArtworkPage'
 import { InitAreaRankingPage } from './crawlArtworkPage/InitAreaRankingPage'
@@ -19,12 +18,15 @@ import { InitNovelPage } from './crawlNovelPage/InitNovelPage'
 import { InitNovelSeriesPage } from './crawlNovelPage/InitNovelSeriesPage'
 import { InitSearchNovelPage } from './crawlNovelPage/InitSearchNovelPage'
 import { InitRankingNovelPage } from './crawlNovelPage/InitRankingNovelPage'
+import { InitRankingNovelPageNew } from './crawlNovelPage/InitRankingNovelPageNew'
 import { InitNewNovelPage } from './crawlNovelPage/InitNewNovelPage'
 import { InitArtworkSeriesPage } from './crawlArtworkPage/InitArtworkSeriesPage'
 import { InitFollowingPage } from './crawlMixedPage/InitFollowingPage'
 import { InitUnsupportedPage } from './crawl/InitUnsupportedPage'
 import { InitUnlistedPage } from './crawlMixedPage/InitUnlistedPage'
 import { InitRequestPage } from './crawl/InitRequestPage'
+import { InitDashboardPage } from './crawlMixedPage/InitDashboardPage'
+import { InitContestPage } from './crawlMixedPage/InitContestPage'
 
 class InitPage {
   constructor() {
@@ -46,8 +48,6 @@ class InitPage {
         return new InitArtworkPage()
       case pageType.list.UserHome:
         return new InitUserPage()
-      case pageType.list.BookmarkLegacy:
-        return new InitBookmarkLegacyPage()
       case pageType.list.Bookmark:
         return new InitBookmarkPage()
       case pageType.list.ArtworkSearch:
@@ -73,7 +73,9 @@ class InitPage {
       case pageType.list.NovelSearch:
         return new InitSearchNovelPage()
       case pageType.list.NovelRanking:
-        return new InitRankingNovelPage()
+        // 查找旧版小说排行榜的页码区域，判断页面是旧版还是新版
+        const old = document.querySelector('.pager-container')
+        return old ? new InitRankingNovelPage() : new InitRankingNovelPageNew()
       case pageType.list.NewNovelBookmark:
         return new InitBookmarkNewPage()
       case pageType.list.NewNovel:
@@ -88,6 +90,10 @@ class InitPage {
         return new InitRequestPage()
       case pageType.list.DiscoverUsers:
         return new InitUnsupportedPage()
+      case pageType.list.Dashboard:
+        return new InitDashboardPage()
+      case pageType.list.Contest:
+        return new InitContestPage()
       default:
         return new InitUnsupportedPage()
     }

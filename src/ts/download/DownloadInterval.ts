@@ -1,5 +1,5 @@
 import { EVT } from '../EVT'
-import { lang } from '../Lang'
+import { lang } from '../Language'
 import { log } from '../Log'
 import { settings } from '../setting/Settings'
 import { store } from '../store/Store'
@@ -57,8 +57,7 @@ class DownloadInterval {
   }
 
   private addTime() {
-    this.allowDownloadTime =
-      new Date().getTime() + settings.downloadInterval * 1000
+    this.allowDownloadTime = Date.now() + settings.downloadInterval * 1000
   }
 
   public wait() {
@@ -72,14 +71,14 @@ class DownloadInterval {
       }
 
       // 可以立即开始下载
-      if (new Date().getTime() >= this.allowDownloadTime) {
+      if (Date.now() >= this.allowDownloadTime) {
         this.addTime()
         return resolve(true)
       }
 
       // 需要等待
       const timer = window.setInterval(() => {
-        if (new Date().getTime() >= this.allowDownloadTime) {
+        if (Date.now() >= this.allowDownloadTime) {
           window.clearInterval(timer)
           this.addTime()
           return resolve(true)

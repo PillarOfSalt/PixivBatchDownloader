@@ -1,6 +1,6 @@
 import { Tools } from './Tools'
 import { Colors } from './Colors'
-import { lang } from './Lang'
+import { lang } from './Language'
 import { EVT } from './EVT'
 import { states } from './store/States'
 import { IDData, WorkTypeString } from './store/StoreType'
@@ -128,6 +128,10 @@ class SelectWork {
 
     // 可以使用 Alt + S 快捷键来模拟点击控制按钮
     window.addEventListener('keydown', (ev) => {
+      if (ev.ctrlKey || ev.shiftKey || ev.metaKey) {
+        return
+      }
+
       if (ev.altKey && ev.code === 'KeyS') {
         this.controlBtn.click()
       }
@@ -215,16 +219,19 @@ class SelectWork {
     this.controlBtn = Tools.addBtn(
       'selectWorkBtns',
       Colors.bgGreen,
-      '_手动选择作品'
+      '_手动选择作品',
+      'Alt + S',
+      'manuallySelectWork'
     )
-    this.controlBtn.setAttribute('title', 'Alt + S')
     this.controlTextSpan = this.controlBtn.querySelector('span')!
     this.updateControlBtn()
 
     this.clearBtn = Tools.addBtn(
       'selectWorkBtns',
       Colors.bgRed,
-      '_清空选择的作品'
+      '_清空选择的作品',
+      '',
+      'clearSelectedWork'
     )
     this.clearBtn.style.display = 'none'
     this.clearBtn.addEventListener('click', () => {
@@ -236,7 +243,9 @@ class SelectWork {
     this.crawlBtn = Tools.addBtn(
       'selectWorkBtns',
       Colors.bgBlue,
-      '_抓取选择的作品'
+      '_抓取选择的作品',
+      '',
+      'crawlSelectedWork'
     )
     this.crawlBtn.style.display = 'none'
     this.crawlBtn.addEventListener('click', (ev) => {
@@ -400,7 +409,7 @@ class SelectWork {
     }
 
     this.bindEscEvent = this.escEvent.bind(this)
-    document.addEventListener('keyup', this.bindEscEvent)
+    window.addEventListener('keydown', this.bindEscEvent)
 
     EVT.fire('closeCenterPanel')
   }
@@ -408,7 +417,7 @@ class SelectWork {
   private pauseSelect() {
     this.pause = true
     this.bindEscEvent &&
-      document.removeEventListener('keyup', this.bindEscEvent)
+      window.removeEventListener('keydown', this.bindEscEvent)
   }
 
   private canSelect() {

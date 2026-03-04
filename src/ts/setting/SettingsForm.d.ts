@@ -1,5 +1,4 @@
 export interface SettingsForm extends HTMLFormElement {
-  setWantPage: HTMLInputElement
   firstFewImages: HTMLInputElement
   downType0: HTMLInputElement
   downType1: HTMLInputElement
@@ -97,6 +96,8 @@ export interface SettingsForm extends HTMLFormElement {
   saveMetaType1: HTMLInputElement
   saveMetaType2: HTMLInputElement
   saveMetaType3: HTMLInputElement
+  saveMetaFormatTXT: HTMLInputElement
+  saveMetaFormatJSON: HTMLInputElement
   setNameRuleForEachPageType: HTMLInputElement
   showAdvancedSettings: HTMLInputElement
   showNotificationAfterDownloadComplete: HTMLInputElement
@@ -107,6 +108,12 @@ export interface SettingsForm extends HTMLFormElement {
   autoExportResultNumber: HTMLInputElement
   PreviewWork: HTMLInputElement
   showDownloadBtnOnThumb: HTMLInputElement
+  copyWorkInfoFormat: HTMLInputElement
+  copyFormatText: HTMLInputElement
+  copyFormatHtml: HTMLInputElement
+  copyFormatImage: HTMLInputElement
+  copyImageSize: HTMLInputElement
+  showCopyBtnOnThumb: HTMLInputElement
   prevWorkSize: HTMLInputElement
   previewWorkWait: HTMLInputElement
   showPreviewWorkTip: HTMLInputElement
@@ -154,4 +161,12 @@ export interface SettingsForm extends HTMLFormElement {
   slowCrawlDealy: HTMLInputElement
   downloadInterval: HTMLInputElement
   downloadIntervalOnWorksNumber: HTMLInputElement
+  crawlLatestFewWorks: HTMLInputElement
+  crawlLatestFewWorksNumber: HTMLInputElement
+  rememberTheLastSaveLocation: HTMLInputElement
+  autoMergeNovel: HTMLInputElement
+  skipNovelsInSeriesWhenAutoMerge: HTMLInputElement
+  seriesNovelNameRule: HTMLInputElement
+  filterSearchResults: HTMLInputElement
+  logVisibleDefault: HTMLInputElement
 }
